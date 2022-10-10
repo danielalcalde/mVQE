@@ -6,6 +6,8 @@ using Random
 using OptimKit
 using Zygote
 using Statistics
+using Flux
+import Base
 
 using ITensors: AbstractMPS
 
@@ -17,40 +19,55 @@ CircuitType = Vector{Tuple}
 
 abstract type AbstractVariationalCircuit end
 
-struct VariationalCircuitRy <: AbstractVariationalCircuit 
-    N:: Int
-    depth:: Int
+
+struct VariationalCircuitRy <: AbstractVariationalCircuit
+    params::Matrix{Float64}
+    VariationalCircuitRy(params::Matrix{Float64}) = new(params)
+    VariationalCircuitRy(N::Int, depth::Int) = new(2π .* rand(N, depth))
+    VariationalCircuitRy() = new(Matrix{Float64}(undef, 0, 0)) # Empty circuit to be used as a placeholder
 end
-initialize_circuit(model::VariationalCircuitRy) = 2π .* rand(model.depth, model.N)
+Flux.@functor VariationalCircuitRy
+Base.size(model::VariationalCircuitRy) = size(model.params)
+Base.size(model::VariationalCircuitRy, i::Int) = size(model.params, i)
+Base.show(io::IO, c::VariationalCircuitRy) = print(io, "VariationalCircuitRy(N=$(size(c, 1)), depth=$(size(c, 2)))")
 
-Base.show(io::IO, c::VariationalCircuitRy) = print(io, "VariationalCircuitRy(N=$(c.N), depth=$(c.depth))")
 
-function generate_circuit(model::VariationalCircuitRy, θ)
+function generate_circuit(model::VariationalCircuitRy; params=nothing)
+    if params === nothing
+        params = model.params
+    end
+
     circuit = Tuple[]
-    @assert size(θ, 1) == model.depth
 
-    for d in 1:size(θ, 1)
-        circuit = vcat(circuit, CXlayer(model.N, d))
-        circuit = vcat(circuit, Rylayer(θ[d, :]))
+    N = size(params, 1)
+    depth = size(params, 2)
+
+    for d in 1:depth
+        circuit = vcat(circuit, CXlayer(N, d))
+        circuit = vcat(circuit, Rylayer(params[:, d]))
     end
     return circuit
 end
 
 abstract type AbstractVariationalMeasurementCircuit <: AbstractVariationalCircuit end
+Flux.trainable(a::AbstractVariationalMeasurementCircuit) = (a.vcircuits,)
+Base.length(a::AbstractVariationalMeasurementCircuit) = length(a.vcircuits)
+
 struct VariationalMeasurement <: AbstractVariationalMeasurementCircuit
-    vcircuit:: AbstractVariationalCircuit
-    depth:: Int
+    vcircuits:: Vector{AbstractVariationalCircuit}
     measurement_indices:: Vector{Int}
     reset:: Int
+    
 end
+Flux.@functor VariationalMeasurement
 
-initialize_circuit(model::AbstractVariationalMeasurementCircuit) = [initialize_circuit(model.vcircuit) for _ in 1:model.depth]
+VariationalMeasurement(vcircuits::Vector{T}, measurement_indices:: Vector{Int}; reset:: Int=1) where T <: AbstractVariationalCircuit = VariationalMeasurement(vcircuits, measurement_indices, reset)
 
-function generate_circuit(model::VariationalMeasurement, θs)
+function generate_circuit(model::VariationalMeasurement; params=nothing)
+    @assert params === nothing "VariationalMeasurement does not take parameters"
     circuit = Tuple[]
-    @assert length(θs) == model.depth
-    for θ in θs
-        circuit = vcat(circuit, generate_circuit(model.vcircuit, θ))
+    for vcircuit in model.vcircuits
+        circuit = vcat(circuit, generate_circuit(vcircuit))
         circuit = vcat(circuit, ProjectiveMeasurementLayer(model.measurement_indices, model.reset))
     end
 
@@ -58,16 +75,17 @@ function generate_circuit(model::VariationalMeasurement, θs)
 end
 
 struct VariationalMeasurementMC <: AbstractVariationalMeasurementCircuit
-    vcircuit:: AbstractVariationalCircuit
-    depth:: Int
+    vcircuits:: Vector{AbstractVariationalCircuit}
     measurement_indices:: Vector{Int}
     reset:: Int
 end
+Flux.@functor VariationalMeasurementMC
 
-function PastaQ.runcircuit(ρ::States, model::VariationalMeasurementMC, θs; kwargs...)
-    @assert length(θs) == model.depth
-    for i in 1:model.depth
-        ρ = runcircuit(ρ, model.vcircuit, θs[i]; kwargs...)
+VariationalMeasurementMC(vcircuits::Vector{T}, measurement_indices:: Vector{Int}; reset:: Int=1) where T <: AbstractVariationalCircuit = VariationalMeasurementMC(vcircuits, measurement_indices, reset)
+
+function (model::VariationalMeasurementMC)(ρ::States; kwargs...)
+    for vcircuit in model.vcircuits
+        ρ = vcircuit(ρ; kwargs...)
         ρ, _ = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset)
     end
 
@@ -77,13 +95,20 @@ end
 # Run circuit
 
 # Evolve wave function with a sequence of gates
-function PastaQ.runcircuit(ψ::States, model::AbstractVariationalCircuit, θ; kwargs...)
-    circuit = generate_circuit(model, θ)
+function (model::AbstractVariationalCircuit)(ψ::States; params=nothing, kwargs...)
+    circuit = generate_circuit(model; params=params)
     return runcircuit(ψ, circuit; kwargs...)
 end
 
-PastaQ.runcircuit(ψs::VectorAbstractMPS, circuit::CircuitType; kwargs...) = 
-    [runcircuit(ψ, circuit; kwargs...) for ψ in ψs]
+function (circuit::CircuitType)(ψ::AbstractMPS; kwargs...)
+    return runcircuit(ψ, circuit; kwargs...)
+end
+
+function (circuit::CircuitType)(ψs::VectorAbstractMPS; kwargs...) 
+    return [circuit(ψ, circuit; kwargs...) for ψ in ψs]
+end
+
+
 
 
 include("FeedbackCircuits/FeedbackCircuits.jl")

@@ -7,6 +7,7 @@ using OptimKit
 using Zygote
 using Statistics
 using ThreadsX
+import Flux
 
 using ITensors: AbstractMPS
 
@@ -23,25 +24,25 @@ include("Layers.jl")
 include("Circuits.jl")
 
 using mVQE.ITensorsExtension: VectorAbstractMPS, States, projective_measurement
-using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit, initialize_circuit
+using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit
 
 
 # Cost function
 function loss(ψ::MPS, H::MPO; kwargs...)
-    return inner(ψ', H, ψ; kwargs...)
+    return real(inner(ψ', H, ψ; kwargs...))
 end
 
 function loss(ρ::MPO, H::MPO; kwargs...)
     return real(inner(ρ, H; kwargs...))
 end
 
-function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, θ; noise=nothing, kwargs...)
-    Uψ = runcircuit(ψ, model, θ; noise, kwargs...)
+function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit; noise=nothing, kwargs...)
+    Uψ = model(ψ; noise, kwargs...)
     return loss(Uψ, H; kwargs...)
 end
 
-function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, θ, samples::Int; compute_std=false, noise=nothing, kwargs...)
-    losses = [loss(ψ, H, model, θ; noise, kwargs...) for _ in 1:samples]
+function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; compute_std=false, noise=nothing, kwargs...)
+    losses = [loss(ψ, H, model; noise, kwargs...) for _ in 1:samples]
 
     if compute_std
         return mean(losses), std(losses) / sqrt(samples)
@@ -69,66 +70,62 @@ function State_length(ψs::VectorAbstractMPS)
 end
 
 # Optimize with gradient descent
-
-function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCircuit
-                             ;θ=initialize_circuit(model), optimizer=LBFGS(; maxiter=50), kwargs...)
-    
-    loss_wrapper(θ) = loss(ψs, H, model, θ; kwargs...)
-
-    function loss_and_grad(θ)
-        y, (∇,) = withgradient(loss_wrapper, θ)
-        return y, ∇
-    end
-
-    θ, loss_v, gradient_, niter, history = optimize(loss_and_grad, θ, optimizer)
-    
-    misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
-    
-    return loss_v, θ, runcircuit(ψs, model, θ; kwargs...), misc
-end
-
-
-function withgradient_vector(args...; kwargs...)
-    y, (∇,) = withgradient(args...; kwargs...)
-    return [y, ∇]
-end
-
-function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalMeasurementCircuit, samples::Int
-                             ;θ=initialize_circuit(model), optimizer=LBFGS(; maxiter=50), parallel=false, kwargs...)
+function optimize_and_evolve(ψs, H::MPO, model::AbstractVariationalMeasurementCircuit,
+                             ; optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false, kwargs...)
     
     local loss_and_grad
+    
     if parallel
         # Get the number of threads
         nthreads = Threads.nthreads()
-
-        # Split the samples into nthreads
-        samples_per_thread = samples ÷ nthreads
+        if nthreads > samples
+            samples_per_thread = 1
+            nthreads = samples
+        else
+            # Split the samples into nthreads
+            samples_per_thread = samples ÷ nthreads
+        end
 
         # Use the first nthreads-1 threads to calculate the loss
-        loss_wrapper_parallel(θ) = loss(ψs, H, model, θ, samples_per_thread; kwargs...)
-        function loss_and_grad_parallel(θ)
-            GC.enable(false)
-            out = ThreadsX.sum(withgradient_vector(loss_wrapper_parallel, θ)/nthreads for i in 1:nthreads)
-            GC.enable(true)
-            GC.gc()
-            return out
+        
+        function loss_and_grad_serial_parallel(model)
+            y, ∇ = withgradient(Flux.params(model)) do
+                loss(ψs, H, model, samples; kwargs...)
+            end
+            return [y, ∇]
         end
+        
+        loss_and_grad_parallel(model) = ThreadsX.sum(loss_and_grad_serial_parallel(model)/nthreads for i in 1:nthreads)
+        
         loss_and_grad = loss_and_grad_parallel
 
     else
-        loss_wrapper_(θ) = loss(ψs, H, model, θ, samples; kwargs...)
-        function loss_and_grad_(θ)
-            y, (∇,) = withgradient(loss_wrapper_, θ)
-            return y, ∇
+        if samples == 1
+            function loss_and_grad_(model)
+                y, ∇ = withgradient(Flux.params(model)) do
+                    loss(ψs, H, model; kwargs...)
+                end
+                return y, ∇
+            end
+            loss_and_grad = loss_and_grad_
+        else
+            function loss_and_grad_serial(model)
+                y, ∇ = withgradient(Flux.params(model)) do
+                    loss(ψs, H, model, samples; kwargs...)
+                end
+                return y, ∇
+            end
+            loss_and_grad = loss_and_grad_serial
         end
-        loss_and_grad = loss_and_grad_
+            
+        
     end
-
-    θ, loss_v, gradient_, niter, history = optimize(loss_and_grad, θ, optimizer)
+    
+    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad, model, optimizer)
     
     misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
 
-    return loss_v, θ, runcircuit(ψs, model, θ; kwargs...), misc
+    return loss_v, model_optim, model_optim(ψs; kwargs...), misc
 end
 
 function optimize_and_evolve(k::Int, measurement_indices::Vector{Int}, ρ::States, H::MPO, model::AbstractVariationalCircuit
@@ -176,5 +173,8 @@ function optimize_and_evolve(k::Int, measurement_indices::Vector{Int}, ρ::State
     
     return loss_value, θs, ρ, misc
 end
+
+# To make Trea
+
 
 end
