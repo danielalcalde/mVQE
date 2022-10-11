@@ -32,7 +32,6 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
             Flux.update!(optimizer.optimizer, θ, gradient_)
         end
         
-        
         if normgrad < optimizer.gradtol
             break
         end
@@ -41,7 +40,7 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
         history[niter, :] .= loss, normgrad
         
         if optimizer.verbosity >= 2
-            @info "$(typeof(optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(normgrad)"
+            @info "$(typeof(optimizer.optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(normgrad)"
             flush(stdout)
             flush(stderr)
         end
@@ -50,7 +49,7 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
     end
 
     if optimizer.verbosity == 1
-        @info "$(typeof(optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(normgrad)"
+        @info "$(typeof(optimizer.optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(normgrad)"
         flush(stdout)
         flush(stderr)
     end

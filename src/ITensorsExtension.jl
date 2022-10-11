@@ -302,9 +302,10 @@ function projective_measurement_gate_sample(s, result::Int, prob::Real; reset=no
     sₚ = prime(s)
     projn = ITensor(s, sₚ)
     Zygote.ignore() do
-        if reset === nothing                
+        if reset === nothing
             projn[s => result, sₚ => result] = 1. / sqrt(prob)
         else
+            @assert reset <= dim(s)
             projn[s => result, sₚ => reset] = 1. / sqrt(prob)
         end
     end

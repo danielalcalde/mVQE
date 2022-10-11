@@ -69,15 +69,26 @@ function State_length(ψs::VectorAbstractMPS)
     return length(ψs[1])
 end
 
+function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit; samples::Int=1, kwargs...)
+    y, ∇ = withgradient(Flux.params(model)) do
+        loss(ψs, H, model, samples; kwargs...)
+    end
+    return [y, ∇]
+end
+
 # Optimize with gradient descent
-function optimize_and_evolve(ψs, H::MPO, model::AbstractVariationalMeasurementCircuit,
-                             ; optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false, kwargs...)
+function optimize_and_evolve(ψs, H::MPO, model::AbstractVariationalCircuit,
+                             ; optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false, nthreads=0, kwargs...)
     
-    local loss_and_grad
+    local loss_and_grad_local
     
-    if parallel
+    if parallel && samples > 1 && nthreads > 1
         # Get the number of threads
-        nthreads = Threads.nthreads()
+        if nthreads == 0
+            nthreads = Threads.nthreads()
+        end
+
+        # If the number of threads is larger than the number of states, set the number of threads to the number of states
         if nthreads > samples
             samples_per_thread = 1
             nthreads = samples
@@ -86,42 +97,18 @@ function optimize_and_evolve(ψs, H::MPO, model::AbstractVariationalMeasurementC
             samples_per_thread = samples ÷ nthreads
         end
 
-        # Use the first nthreads-1 threads to calculate the loss
-        
-        function loss_and_grad_serial_parallel(model)
-            y, ∇ = withgradient(Flux.params(model)) do
-                loss(ψs, H, model, samples; kwargs...)
-            end
-            return [y, ∇]
-        end
-        
+        # Use the first nthreads threads to calculate the loss
+        loss_and_grad_serial_parallel(model) = loss_and_grad(ψs, H, model; samples=samples_per_thread, kwargs...)
         loss_and_grad_parallel(model) = ThreadsX.sum(loss_and_grad_serial_parallel(model)/nthreads for i in 1:nthreads)
         
-        loss_and_grad = loss_and_grad_parallel
+        loss_and_grad_local = loss_and_grad_parallel
 
     else
-        if samples == 1
-            function loss_and_grad_(model)
-                y, ∇ = withgradient(Flux.params(model)) do
-                    loss(ψs, H, model; kwargs...)
-                end
-                return y, ∇
-            end
-            loss_and_grad = loss_and_grad_
-        else
-            function loss_and_grad_serial(model)
-                y, ∇ = withgradient(Flux.params(model)) do
-                    loss(ψs, H, model, samples; kwargs...)
-                end
-                return y, ∇
-            end
-            loss_and_grad = loss_and_grad_serial
-        end
-            
-        
+        loss_and_grad_serial(model) = loss_and_grad(ψs, H, model; samples=samples, kwargs...)
+        loss_and_grad_local = loss_and_grad_serial
     end
     
-    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad, model, optimizer)
+    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer)
     
     misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
 
