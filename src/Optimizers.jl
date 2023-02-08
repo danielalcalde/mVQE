@@ -17,30 +17,32 @@ end
 function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; finalize! = OptimKit._finalize!) where {T}
     θ = deepcopy(θ)
     
-    history = Matrix{Float64}(undef, optimizer.maxiter, 2)
+    history = Matrix{Float64}(undef, optimizer.maxiter, 3)
 
     niter = 0
     local loss, gradient_
     for niter in 1:optimizer.maxiter
         loss, gradient_ = loss_and_grad(θ)
-        normgrad = norm(gradient_)
+        norm_grad = norm(gradient_)
         
         if hasmethod(Flux.params, (T,))
             # It is a flux model
             Flux.update!(optimizer.optimizer, Flux.params(θ), gradient_)
+            norm_θ = norm(Flux.params(θ))
         else
             Flux.update!(optimizer.optimizer, θ, gradient_)
+            norm_θ = norm(θ)
         end
         
-        if normgrad < optimizer.gradtol
+        if norm_grad < optimizer.gradtol
             break
         end
 
-        # Saving the loss and gradient
-        history[niter, :] .= loss, normgrad
+        # Saving the loss and norms
+        history[niter, :] .= loss, norm_grad, norm_θ
         
         if optimizer.verbosity >= 2
-            @info "$(typeof(optimizer.optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(normgrad)"
+            @info "$(typeof(optimizer.optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(norm_grad), ‖θ‖ = $(norm_θ)"
             flush(stdout)
             flush(stderr)
         end
@@ -49,7 +51,7 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
     end
 
     if optimizer.verbosity == 1
-        @info "$(typeof(optimizer.optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(normgrad)"
+        @info "$(typeof(optimizer.optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(norm_grad), ‖θ‖ = $(norm_θ)"
         flush(stdout)
         flush(stderr)
     end
@@ -58,7 +60,7 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
 end
 
 
-# Functions to make 
+# Functions to make a Flux model work with OptimKit
 import Base.*
 import Base./
 import Base.+
@@ -107,13 +109,24 @@ function +(model::T, grads::Zygote.Grads) where {T}
     return model_new
 end
 
+#=
 function +(grads1::Zygote.Grads, grads2::Zygote.Grads)
     @assert grads1.params == grads2.params "The gradients do not have the same parameters"
-
     out = copy(grads1)
     for p in grads1.params
         out.grads[p] = grads1[p] .+ grads2[p]
     end
+    return out
+end
+=#
+
+function +(grads1::Zygote.Grads, grads2::Zygote.Grads) # This is the one that is used, fix so that it works with Distributed
+    @assert grads1.params == grads2.params "The gradients do not have the same parameters"
+    out = copy(grads1)
+    for i in 1:length(out.params)
+        out.grads[out.params[i]] = grads1[grads1.params[i]] .+ grads2[grads2.params[i]]
+    end
+
     return out
 end
 
