@@ -1,12 +1,15 @@
 module mVQE
 
+using ThreadsX
+using Distributed
+using ParallelDataTransfer
+
 using PastaQ
 using ITensors
 using Random
 using OptimKit
 using Zygote
 using Statistics
-using ThreadsX
 import Flux
 
 using ITensors: AbstractMPS
@@ -36,13 +39,17 @@ function loss(ρ::MPO, H::MPO; kwargs...)
     return real(inner(ρ, H; kwargs...))
 end
 
-function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit; noise=nothing, kwargs...)
-    Uψ = model(ψ; noise, kwargs...)
+function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit; kwargs...)
+    Uψ = model(ψ; kwargs...)
     return loss(Uψ, H; kwargs...)
 end
 
-function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; compute_std=false, noise=nothing, kwargs...)
-    losses = [loss(ψ, H, model; noise, kwargs...) for _ in 1:samples]
+function mVQE.loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; compute_std=false, parallel=false, kwargs...)
+    if parallel
+        losses = ThreadsX.collect(loss(ψ, H, model; kwargs...) for _ in 1:samples)
+    else
+        losses = [loss(ψ, H, model; kwargs...) for _ in 1:samples]
+    end
 
     if compute_std
         return mean(losses), std(losses) / sqrt(samples)
@@ -69,42 +76,90 @@ function State_length(ψs::VectorAbstractMPS)
     return length(ψs[1])
 end
 
-function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit; samples::Int=1, kwargs...)
+function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit; kwargs...)
     y, ∇ = withgradient(Flux.params(model)) do
-        loss(ψs, H, model, samples; kwargs...)
+        loss(ψs, H, model; kwargs...)
     end
     return [y, ∇]
 end
 
+function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; kwargs...)
+    g = mVQE.loss_and_grad(ψs, H, model; kwargs...)
+    for _ in 1:samples - 1
+        g += mVQE.loss_and_grad(ψs, H, model; kwargs...)
+    end
+    return g / samples
+
+end
+
+function get_loss_and_grad_threaded(ψs, H::mVQE.MPO; samples::Int=1, kwargs...)
+    # Get the number of threads
+    nthreads = Threads.nthreads()
+
+    # If the number of threads is larger than the number of states, set the number of threads to the number of states
+    if nthreads > samples
+        samples_per_thread = 1
+        nthreads = samples
+    else
+        # Split the samples into nthreads
+        samples_per_thread = samples ÷ nthreads
+    end
+
+    # Use the first nthreads threads to calculate the loss
+    loss_and_grad_serial_parallel(model) = loss_and_grad(ψs, H, model, samples_per_thread, kwargs...)
+    loss_and_grad_threaded(model) = ThreadsX.sum(loss_and_grad_serial_parallel(model)/nthreads for i in 1:nthreads)
+    return loss_and_grad_threaded
+end
+
+function get_loss_and_grad_distributed(ψs, H::mVQE.MPO; samples::Int=1, kwargs...)
+    nthreads = length(workers())
+            
+    # If the number of threads is larger than the number of states, set the number of threads to the number of states
+    if nthreads > samples
+        samples_per_process = 1
+        nthreads = samples
+    else
+        # Split the samples into nthreads
+        samples_per_process = samples ÷ nthreads
+    end
+    @everywhere @eval  begin 
+        using mVQE
+    end
+
+    sendto(workers(), ψs=ψs, H=H, samples=samples, samples_per_process=samples_per_process, kwargs=kwargs)
+
+    @everywhere begin
+        function cache(model::mVQE.AbstractVariationalCircuit)
+            return mVQE.loss_and_grad(ψs, H, model, samples_per_process; kwargs...) / samples
+        end
+    end
+
+    function loss_and_grad_distributed(model::mVQE.AbstractVariationalCircuit)
+        return @distributed (+) for i = 1:samples
+            cache(model) 
+        end
+    end
+    return loss_and_grad_distributed
+end
+
+
 # Optimize with gradient descent
 function optimize_and_evolve(ψs, H::MPO, model::AbstractVariationalCircuit,
-                             ; optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false, nthreads=0, kwargs...)
+                             ; optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false, threaded=false, kwargs...)
     
     local loss_and_grad_local
     
-    if parallel && samples > 1 && nthreads > 1
-        # Get the number of threads
-        if nthreads == 0
-            nthreads = Threads.nthreads()
-        end
-
-        # If the number of threads is larger than the number of states, set the number of threads to the number of states
-        if nthreads > samples
-            samples_per_thread = 1
-            nthreads = samples
-        else
-            # Split the samples into nthreads
-            samples_per_thread = samples ÷ nthreads
-        end
-
-        # Use the first nthreads threads to calculate the loss
-        loss_and_grad_serial_parallel(model) = loss_and_grad(ψs, H, model; samples=samples_per_thread, kwargs...)
-        loss_and_grad_parallel(model) = ThreadsX.sum(loss_and_grad_serial_parallel(model)/nthreads for i in 1:nthreads)
+    if parallel && samples > 1
+        if  threaded # Deprecated
+            println("Warning: threaded is deprecated.")
+            loss_and_grad_local = get_loss_and_grad_threaded(ψs, H; samples=samples, kwargs...)
         
-        loss_and_grad_local = loss_and_grad_parallel
+        else # Use Distributed
+            loss_and_grad_local = get_loss_and_grad_distributed(ψs, H; samples=samples, kwargs...)
+        end
 
     else
-        loss_and_grad_serial(model) = loss_and_grad(ψs, H, model; samples=samples, kwargs...)
+        loss_and_grad_serial(model) = loss_and_grad(ψs, H, model, samples, kwargs...)
         loss_and_grad_local = loss_and_grad_serial
     end
     
