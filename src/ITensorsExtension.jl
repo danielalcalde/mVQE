@@ -10,75 +10,139 @@ VectorAbstractMPS = Union{Vector{MPS}, Vector{MPO}}
 States = Union{VectorAbstractMPS, AbstractMPS} 
 
 
+function sample_and_probs_mps(A::ITensor, s, d)
+    local An, projn, pn
 
-function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing)
-    N = length(ψ)
-    orthogonalize!(ψ, 1)
-    if ITensors.orthocenter(ψ) != 1
-        error("sample: MPS ψ must have orthocenter(ψ)==1")
+    pdisc = 0.
+    r = rand()
+    n = 1
+    while n <= d
+        projn = ITensor(s)
+        projn[s => n] = 1.
+        An = A * dag(projn)
+        pn = real(scalar(dag(An) * An))
+        pdisc += pn
+        (r < pdisc) && break
+        n += 1
     end
-    
-    if reset === nothing || reset isa Int
-        reset = fill(reset, length(indices))
+    return n, pn, An
+end
+
+function sample_and_probs_mps2(P::ITensor, ψi::ITensor, s, linkind_P, d)
+    local An, projn, prob, Pn
+
+    pdisc = 0.
+    r = rand()
+    n = 1
+    # Remove the prime from the index A.tensor.inds[1] 
+    tracer = delta(linkind_P, prime(linkind_P))
+    while n <= d
+        projn = ITensor(s)
+        projn[s => n] = 1.
+        An = ψi * dag(projn)
+        Pn = P * An * prime(dag(An))
+        prob = real(scalar(tracer * Pn))
+        pdisc += prob
+        (r < pdisc) && break
+        n += 1
     end
+    return n, prob, Pn
+end
+
+function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing, norm_treshold=0.9)
+    #println("Warning: projective_measurement_sample needs to be validated")
+    local N, result, P
+
+    # In P we store the contracted left hand side of the tensor network
+    # Diagramm:
+    # P = O---O---O--
+    #     |   |   |
+    #     O---O---O--
+
+    Zygote.@ignore begin 
+        N = length(ψ)
+
+        orthogonalize!(ψ, 1)
+        if ITensors.orthocenter(ψ) != 1
+            error("sample: MPS ψ must have orthocenter(ψ)==1")
+        end
+        
+        if reset === nothing || reset isa Int
+            reset = fill(reset, length(indices))
+        end
     
-    #TODO: Check that the qubits are in order
-    
-    if abs(1.0 - norm(ψ[1])) > 1E-8
-        error("sample: MPS is not normalized, norm=$(norm(ψ[1]))")
+        #TODO: Check that the qubits are in the right order
+
+        n = norm(ψ[1])
+        if abs(1.0 - n) < norm_treshold
+            ψ[1] *= (1.0 / n)
+        else
+            error("sample: MPS is not normalized, norm=$(n), $(abs(1.0 - n)))> $norm_treshold")
+        end
+
+        result = zeros(Int, length(indices))
+        A = ψ[1]
+
     end
-    
-    result = zeros(Int, length(indices))
-    A = ψ[1]
     
     ψ_tensors = ITensor[]
     
     i = 1
     for j in 1:N
+
+        local prob, projn, ψj
         s = siteind(ψ, j)
         d = dim(s)
-        # Compute the probability of each state
-        # one-by-one and stop when the random
-        # number r is below the total prob so far
-        
-        # Will need An bellow
-        An = ITensor()
-        
+
         if j in indices
-            pdisc = 0.0
-            r = rand()
-            pn = 0.0
-            n = 1
-            while n <= d
-                projn = ITensor(s)
-                projn[s => n] = 1.0
-                An = A * dag(projn)
-                pn = real(scalar(dag(An) * An))
-                pdisc += pn
-                (r < pdisc) && break
-                n += 1
+            # Measure the qubit
+            Zygote.@ignore begin
+                if j == 1
+                    result[i], prob, An = sample_and_probs_mps(ψ[1], s, d)
+                    P = An * prime(dag(An))
+                    P *= (1. / prob)
+                else
+                    linkind_P = linkind(ψ, j)
+                    Zygote.@ignore result[i], prob, P = sample_and_probs_mps2(P, ψ[j], s, linkind_P, d)
+                    P *= (1. / prob)
+                end
             end
+
+            # Get the projector
+            projn = Zygote.@ignore projective_measurement_gate_sample(s, result[i], prob; reset=reset[i])
             
-            # Set the new mps
-            projn = projective_measurement_gate_mc(s, n, pn; reset=reset[i])
-            
+            # Apply the projector
             ψj = noprime(ψ[j] * projn)
-            
-            result[i] = n
+
             i += 1
         else
             # No measurement
             ψj = ψ[j]
-            An = A
-            pn = 1.
+            if j == 1
+                linkind_P = linkind(ψ, j)
+                P = ψ[1] * prime(dag(ψ[1]), linkind_P)
+            elseif j == N
+                linkind2_P = linkind(ψ, j-1)
+                P = P * ψ[j] * prime(dag(ψ[j]), linkind2_P)
+            else
+                linkind_P = linkind(ψ, j)
+                linkind2_P = linkind(ψ, j-1)
+                P = P * ψ[j] * prime(dag(ψ[j]), linkind_P, linkind2_P)
+            end
         end
 
-        ψ_tensors = vcat(ψ_tensors, ψj)
-        
+        # Sanity Check
+        #=
         if j < N
-            A = ψ[j + 1] * An
-            A *= (1.0 / sqrt(pn))
+            linkind_P = linkind(ψ, j)
+            tracer = delta(linkind_P, prime(linkind_P))
+            prob = real(scalar(tracer * P))
+            @assert abs(1.0 - prob) < 1e-8
         end
+        =#
+
+        ψ_tensors = vcat(ψ_tensors, ψj)
+
     end
     return MPS(ψ_tensors), result
 end
@@ -387,7 +451,11 @@ function Base.convert(ty::Type{MPO}, x::Zygote.Tangent)
     return MPO(x.data, x.llim, x.rlim)
 end
 
-function Base.convert(ty::Type{Vector{ITensor}}, x::MPO)
+function Base.convert(ty::Type{MPS}, x::Zygote.Tangent)
+    return MPS(x.data, x.llim, x.rlim)
+end
+
+function Base.convert(ty::Type{Vector{ITensor}}, x::States)
     return x.data
 end
 
