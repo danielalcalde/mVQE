@@ -81,7 +81,6 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
         end
 
         result = zeros(Int, length(indices))
-        A = ψ[1]
 
     end
     
@@ -98,10 +97,27 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
             # Measure the qubit
             Zygote.@ignore begin
                 if j == 1
+                    # Diagramm P:
+                    #     O--
+                    #     |
+                    #     O
+                    #
+                    #     O
+                    #     |
+                    #     O--
                     result[i], prob, An = sample_and_probs_mps(ψ[1], s, d)
                     P = An * prime(dag(An))
                     P *= (1. / prob)
                 else
+                    # Diagramm P * ψj * ψj':
+                    #              O-- --O-- ψj
+                    #              O     |
+                    #              O     O proj
+                    #            P O      
+                    #              O     O proj
+                    #              O     |
+                    #              O-- --O-- ψj'
+
                     linkind_P = linkind(ψ, j)
                     Zygote.@ignore result[i], prob, P = sample_and_probs_mps2(P, ψ[j], s, linkind_P, d)
                     P *= (1. / prob)
@@ -118,17 +134,26 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
         else
             # No measurement
             ψj = ψ[j]
-            if j == 1
-                linkind_P = linkind(ψ, j)
-                P = ψ[1] * prime(dag(ψ[1]), linkind_P)
-            elseif j == N
-                linkind2_P = linkind(ψ, j-1)
-                P = P * ψ[j] * prime(dag(ψ[j]), linkind2_P)
-            else
-                linkind_P = linkind(ψ, j)
-                linkind2_P = linkind(ψ, j-1)
-                P = P * ψ[j] * prime(dag(ψ[j]), linkind_P, linkind2_P)
+
+            Zygote.@ignore begin
+                if j == 1
+                    # Diagramm P:
+                    #     O-- ψj
+                    #     |
+                    #     O-- ψj'
+                    linkind_P = linkind(ψ, j)
+                    P = ψ[1] * prime(dag(ψ[1]), linkind_P)
+                elseif j < N
+                    # Diagramm P * ψj * ψj':
+                    #              O-- --O-- ψj
+                    #            P O     | 
+                    #              O-- --O-- ψj'
+                    linkind_P = linkind(ψ, j)
+                    linkind2_P = linkind(ψ, j-1)
+                    P = P * ψ[j] * prime(dag(ψ[j]), linkind_P, linkind2_P)
+                end
             end
+
         end
 
         # Sanity Check
