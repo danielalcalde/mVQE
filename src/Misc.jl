@@ -26,6 +26,30 @@ function get_ancillas_indices(N_state::Int, ancilla_frequency::Int)
     return state_indices, ancillas_indices, N
 end
 
+function get_ancillas_indices(N_state::Int, pattern::Vector{Bool})
+    @assert any(pattern) "There is no physical states"
+    ancillas_indices = Vector{Int}()
+    state_indices = Vector{Int}()
+
+    l = length(pattern)
+    N = 1
+    while true
+        if pattern[mod1(N, l)]
+            push!(state_indices, N)
+        else
+            push!(ancillas_indices, N)
+        end
+        
+
+        if length(state_indices) >= N_state && mod1(N, l) == l
+            return state_indices, ancillas_indices, N
+        end
+
+        N += 1
+    end
+    
+end
+
 """
     unravel_index(index::Int, shape::Tuple})
 
