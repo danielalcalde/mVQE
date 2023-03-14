@@ -34,14 +34,21 @@ function sample_and_probs_mps2(P::ITensor, ψi::ITensor, s, linkind_P, d)
     pdisc = 0.
     r = rand()
     n = 1
-    # Remove the prime from the index A.tensor.inds[1] 
-    tracer = delta(linkind_P, prime(linkind_P))
+    # Remove the prime from the index A.tensor.inds[1]
+    if linkind_P !== nothing
+        tracer = delta(linkind_P, prime(linkind_P))
+    end
+    
     while n <= d
         projn = ITensor(s)
         projn[s => n] = 1.
         An = ψi * dag(projn)
         Pn = P * An * prime(dag(An))
-        prob = real(scalar(tracer * Pn))
+        if linkind_P === nothing
+            prob = real(scalar(Pn))
+        else
+            prob = real(scalar(tracer * Pn))
+        end
         pdisc += prob
         (r < pdisc) && break
         n += 1
@@ -119,7 +126,7 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
                     #              O-- --O-- ψj'
 
                     linkind_P = linkind(ψ, j)
-                    Zygote.@ignore result[i], prob, P = sample_and_probs_mps2(P, ψ[j], s, linkind_P, d)
+                    result[i], prob, P = sample_and_probs_mps2(P, ψ[j], s, linkind_P, d)
                     P *= (1. / prob)
                 end
             end
