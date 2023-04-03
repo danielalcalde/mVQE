@@ -19,6 +19,12 @@ CircuitType = Vector{Tuple}
 
 abstract type AbstractVariationalCircuit end
 
+function Base.size(model::AbstractVariationalCircuit)
+    throw("Size not defined for $(typeof(model)). This should be the size of the parameters.")
+end
+function Base.size(model::AbstractVariationalCircuit, i::Int)
+    throw("Size not defined for $(typeof(model))")
+end
 
 struct VariationalCircuitRy <: AbstractVariationalCircuit
     params::Matrix{Float64}
@@ -34,6 +40,7 @@ Base.show(io::IO, c::VariationalCircuitRy) = print(io, "VariationalCircuitRy(N=$
 
 function generate_circuit(model::VariationalCircuitRy; params=nothing)
     if params === nothing
+        @assert size(model.params, 1) > 0 "VariationalCircuitRy is empty"
         params = model.params
     end
 
@@ -57,7 +64,6 @@ struct VariationalMeasurement <: AbstractVariationalMeasurementCircuit
     vcircuits:: Vector{AbstractVariationalCircuit}
     measurement_indices:: Vector{Int}
     reset:: Int
-    
 end
 Flux.@functor VariationalMeasurement
 
