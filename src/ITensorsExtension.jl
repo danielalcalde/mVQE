@@ -484,14 +484,14 @@ function projective_measurement(ρ::MPO; indices=1:length(ρ), reset=nothing)
         ρ_tensors = vcat(ρ_tensors, ρi)
     end
 
-    return MPO(ρ_tensors), nothing
+    return MPO(ρ_tensors)
 end
 
 
 function projective_measurement(ψ::MPS; kwargs...)
     ρ = outer(ψ, ψ')
-    ρ, samples = projective_measurement(ρ; kwargs...)
-    return ρ, samples
+    ρ = projective_measurement(ρ; kwargs...)
+    return ρ
 end
 
 

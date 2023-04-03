@@ -185,21 +185,17 @@ function optimize_and_evolve(k::Int, measurement_indices::Vector{Int}, ρ::State
     end
     
     loss_value = 1e10
-    ρ, m = projective_measurement(ρ; indices=measurement_indices, reset=1)
+    ρ = projective_measurement(ρ; indices=measurement_indices, reset=1)
 
     for i in k_init:k
         loss_value, θs[i], ρ, misc_ = optimize_and_evolve(ρ, H, model; θ=get(θs, i, initialize_circuit(model)), kwargs...)
         misc[i] = misc_
 
-        ρ, m = projective_measurement(ρ; indices=measurement_indices, reset=1)
+        ρ = projective_measurement(ρ; indices=measurement_indices, reset=1)
 
         if verbose
             println("iter: $i")
             println("Loss: $loss_value")
-            if m !== nothing
-                m = mean(mean(m)) .- 1
-                println("Measured: $m")
-            end
             println("")
             flush(stdout)
             flush(stderr)
