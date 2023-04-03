@@ -14,6 +14,7 @@ import Flux
 
 using ITensors: AbstractMPS
 
+include("pyflexmps.jl")
 include("Optimizers.jl")
 include("Misc.jl")
 include("Hamiltonians.jl")
@@ -25,9 +26,10 @@ include("StateFactory.jl")
 include("Gates.jl")
 include("Layers.jl")
 include("Circuits.jl")
+include("GirvinProtocol.jl")
 
 using mVQE.ITensorsExtension: VectorAbstractMPS, States, projective_measurement
-using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit
+using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
 
 
 # Cost function
@@ -215,8 +217,6 @@ function optimize_and_evolve(k::Int, measurement_indices::Vector{Int}, ρ::State
     
     return loss_value, θs, ρ, misc
 end
-
-# To make Trea
 
 
 end

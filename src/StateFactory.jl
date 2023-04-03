@@ -60,5 +60,149 @@ function infinite_temp_MPO(hilbert)
     return ρ
 end
 
+function AKLT_half_tensor(link_1, physical, link_2; location=1, spin_selection=nothing)
+    if location == 1
+        @assert link_1.space == 2 && link_2.space == 4 "link_1.space = $(link_1.space), link_2.space = $(link_2.space)"
+    else
+        @assert link_2.space == 2 && link_1.space == 4 "link_1.space = $(link_1.space), link_2.space = $(link_2.space)"
+    end
+    tensor = ITensor(link_1, physical, link_2)
+    
+    if location == 1
+        
+        tensor[1, 1, 1] = -1/sqrt(2)
+        tensor[1, 1, 2] = -1/sqrt(2)
+        tensor[1, 2, 4] = 1.0
+        tensor[2, 1, 3] = -1.0
+        tensor[2, 2, 1] = 1/sqrt(2)
+        tensor[2, 2, 2] = -1/sqrt(2)
+
+    elseif location == 2
+
+        tensor[1, 1, 2] = 0.75
+        tensor[1, 2, 1] = 0.75
+        tensor[2, 1, 2] = 0.25
+        tensor[2, 2, 1] = -0.25
+        tensor[3, 2, 2] = -0.3535533905932738
+        tensor[4, 1, 1] = -0.3535533905932738
+
+    else
+        @assert false, "location parameter needs to be 1, 2 not $location"
+    end
+    
+    if spin_selection !== nothing
+        if location == 1
+            tensor_s = ITensor(link_1)
+        else
+            tensor_s = ITensor(link_2)
+        end
+        tensor_s[1] = spin_selection[1]
+        tensor_s[2] = spin_selection[2]
+        tensor = tensor * tensor_s
+    end
+    
+    return tensor
+end
+
+function AKLT_half_tensor_girvin(link_1, physical, link_2; location=1, spin_selection=nothing)
+    # notebooks/workprojects/tensornetworks/theory/AKLT%20spin%20Half.ipynb
+    if location == 1
+        @assert link_1.space == 2 && link_2.space == 3 "link_1.space = $(link_1.space), link_2.space = $(link_2.space)"
+    else
+        @assert link_2.space == 2 && link_1.space == 3 "link_1.space = $(link_1.space), link_2.space = $(link_2.space)"
+    end
+    tensor = ITensor(link_1, physical, link_2)
+    
+    if location == 1
+        
+        tensor[1, 1, 3] = 1.0
+        tensor[1, 2, 1] = -0.577350269189626
+        tensor[1, 2, 2] = 0.816496580927726
+        tensor[2, 1, 1] = 0.8164965809277263
+        tensor[2, 1, 2] = 0.577350269189626
+
+    elseif location == 2
+
+        tensor[1, 1, 2] = 0.8164965809277264
+        tensor[1, 2, 1] = 0.577350269189626
+        tensor[2, 1, 2] = -0.28867513459481303
+        tensor[2, 2, 1] = 0.40824829046386324
+        tensor[3, 1, 1] = -0.5000000000000001
+
+    else
+        @assert false, "location parameter needs to be 1, 2 not $location"
+    end
+    
+    if spin_selection !== nothing
+        if location == 1
+            tensor_s = ITensor(link_1)
+        else
+            tensor_s = ITensor(link_2)
+        end
+        tensor_s[1] = spin_selection[1]
+        tensor_s[2] = spin_selection[2]
+        tensor = tensor * tensor_s
+    end
+    
+    return tensor
+end
+
+function AKLT_half(spin1_vec, spin2_vec, hilbert; basis="girvin")
+    if basis == "clebsch"
+        tensor_gen = AKLT_half_tensor
+        middle_index_length = 4
+
+    elseif basis == "girvin"
+        tensor_gen = AKLT_half_tensor_girvin
+        middle_index_length = 3
+
+    else
+        @assert false, "basis needs to be clebsh or girvin not $basis"
+    end
+
+    L2 = length(hilbert)
+    L = Int(L2 / 2)
+    tensors = Vector{ITensor}(undef, L2)
+    
+    l_l = Index(2,"Link,n=0")
+    l_r = Index(middle_index_length,"Link,n=1")
+    tensors[1] = tensor_gen(l_l, hilbert[1], l_r, location=1, spin_selection=spin1_vec)
+    
+    l_l = l_r
+    l_r = Index(2,"Link,n=2")
+    tensors[2] = tensor_gen(l_l, hilbert[2], l_r, location=2)
+    
+    for i in 2: L - 1
+        l_l = l_r
+        l_r = Index(middle_index_length,"Link,n=$(2i-1)")
+        tensors[2*i - 1] = tensor_gen(l_l, hilbert[2*i-1], l_r, location=1)
+        
+        l_l = l_r
+        l_r = Index(2,"Link,n=$(2i)")
+        tensors[2*i] = tensor_gen(l_l, hilbert[2*i], l_r, location=2)
+    end
+    l_l = l_r
+    l_r = Index(middle_index_length,"Link,n=$(2 * L -1)")
+    tensors[2 * L - 1] = tensor_gen(l_l, hilbert[2*L-1], l_r, location=1)
+    
+    l_l = l_r
+    l_r = Index(2,"Link,n=$(2 * L)")
+    tensors[2 * L] = tensor_gen(l_l, hilbert[2*L], l_r, location=2, spin_selection=spin2_vec)
+    mps = MPS(tensors)
+    orthogonalize!(mps, 1)
+    mps[1] /= norm(mps[1])
+    #truncate!(mps)
+    return mps
+end
+
+"""
+Constructs the 4 AKLT states.
+"""
+function AKLT_halfs(hilbert; kwargs...)
+    return [AKLT_half([1, 0], [1, 0], hilbert; kwargs...),
+            AKLT_half([1, 0], [0, 1], hilbert; kwargs...),
+            AKLT_half([0, 1], [1, 0], hilbert; kwargs...),
+            AKLT_half([0, 1], [0, 1], hilbert; kwargs...)]
+end
 # end module
 end

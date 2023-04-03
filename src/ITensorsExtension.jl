@@ -56,7 +56,7 @@ function sample_and_probs_mps2(P::ITensor, ψi::ITensor, s, linkind_P, d)
     return n, prob, Pn
 end
 
-function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing, norm_treshold=0.9)
+function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
     #println("Warning: projective_measurement_sample needs to be validated")
     local N, result, P
 
@@ -176,7 +176,47 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
         ψ_tensors = vcat(ψ_tensors, ψj)
 
     end
-    return MPS(ψ_tensors), result
+    ψ_new = MPS(ψ_tensors)
+    if remove_measured
+        return reduce_MPS(ψ_new, indices, result), result
+    else
+        return ψ_new, result
+    end
+end
+"""
+Projects the MPS ψ onto the state |n⟩, where n is a vector of integers. Eliminates the qubits that are measured.
+"""
+function reduce_MPS(ψ::MPS, indices::Vector{Int}, values::Vector{Int}; norm=false)
+    N = length(ψ)
+    ψ_tensors = ITensor[]
+    j = 1
+    P = nothing
+    for i in 1:N
+        if P === nothing
+            ψi = ψ[i]
+        else
+            ψi = ψ[i] * P
+            P = nothing
+        end
+
+        if i in indices
+            s = siteind(ψ, i)
+            projn = ITensor(s)
+            projn[s => values[j]] = 1.
+            P = ψi * projn
+            j += 1
+        else
+            ψ_tensors = vcat(ψ_tensors, ψi)
+        end
+    end
+    if P !== nothing
+        ψ_tensors = vcat(ψ_tensors[1:end-1], ψ_tensors[end] * P)
+    end
+    ψ = MPS(ψ_tensors)
+    if norm
+        ITensors.normalize!(ψ)
+    end
+    return ψ
 end
 
 
