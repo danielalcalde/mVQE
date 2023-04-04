@@ -2,6 +2,7 @@ module GirvinProtocol
 
 using ITensors
 using Flux
+using Zygote
 
 using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
 using mVQE: Circuits
@@ -14,6 +15,8 @@ struct GirvinCircuit <: AbstractVariationalCircuit
     GirvinCircuit() = new(Matrix{Float64}(undef, 0, 0)) # Empty circuit to be used as a placeholder
 end
 Flux.@functor GirvinCircuit
+Flux.trainable(a::GirvinCircuit) = (a.params,)
+
 function GirvinCircuitIdeal(N_state::Int)
     θ_1 = 2 * atan(-1 / sqrt(2))
     θ_2 = 2 * atan(sqrt(2))
@@ -61,9 +64,12 @@ struct GirvinCorrCircuit <: AbstractVariationalCircuit
     GirvinCorrCircuit(N::Int) = new(2π .* rand(N, 4))
     GirvinCorrCircuit() = new(Matrix{Float64}(undef, 0, 0)) # Empty circuit to be used as a placeholder
 end
+Flux.@functor GirvinCorrCircuit
+Flux.trainable(a::GirvinCorrCircuit) = ()
 
 Base.size(model::GirvinCorrCircuit) = size(model.params)
 Base.size(model::GirvinCorrCircuit, i::Int) = size(model.params, i)
+
 
 function Circuits.generate_circuit(model::GirvinCorrCircuit; params=nothing)
     @assert params !== nothing
@@ -71,7 +77,7 @@ function Circuits.generate_circuit(model::GirvinCorrCircuit; params=nothing)
     N = size(params, 1)
     N_state = N * 4
     
-    state_indices, = get_ancillas_indices(N_state, [false, true, true, true, true, false])
+    state_indices, = Zygote.@ignore get_ancillas_indices(N_state, [false, true, true, true, true, false])
     gates = Vector()
     
     for site in 1:N
@@ -113,8 +119,14 @@ function add(a, b)
     return out
 end
 
+param_correction_gates(M) = GirvinCorrectionNetwork()(M) # legacy
 
-function param_correction_gates(M::Vector{T}) where T <: Integer
+struct GirvinCorrectionNetwork end
+Flux.@functor GirvinCorrectionNetwork
+Flux.trainable(a::GirvinCorrectionNetwork) = ()
+
+function (t::GirvinCorrectionNetwork)(M::Vector{T}) where T <: Integer
+    Zygote.@ignore begin
     correction_gates_params = Dict()  
     correction_gates_params[Vector{T}([0, 0])] = [pi/2, pi/2, pi/2, 0]
     correction_gates_params[Vector{T}([0, 1])] = [0, 0, 0, pi]
@@ -136,6 +148,7 @@ function param_correction_gates(M::Vector{T}) where T <: Integer
         end
     end
     return angles
+end
 end
 
 end # module

@@ -33,10 +33,6 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
             Flux.update!(optimizer.optimizer, θ, gradient_)
             norm_θ = norm(θ)
         end
-        
-        if norm_grad < optimizer.gradtol
-            break
-        end
 
         # Saving the loss and norms
         history[niter, :] .= loss, norm_grad, norm_θ
@@ -45,6 +41,10 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
             @info "$(typeof(optimizer.optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(norm_grad), ‖θ‖ = $(norm_θ)"
             flush(stdout)
             flush(stderr)
+        end
+
+        if norm_grad < optimizer.gradtol
+            break
         end
 
         θ, loss, gradient_ = finalize!(θ, loss, gradient_, niter)
