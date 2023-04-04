@@ -448,6 +448,41 @@ function projective_measurement_gate_sample(s, result::Int, prob::Real; reset=no
     return projn
 end
 
+function tr(ρ::MPO, indices)
+    N = length(ρ)
+    
+    ρ_tensors = ITensor[]
+    tracer = nothing
+    j = 1
+    for i in 1:N
+        ρi = ρ[i]
+        if i in indices
+            if tracer === nothing
+                tracer = tr(ρi)
+            else
+                tracer = contract(tracer, tr(ρi))
+            end
+            
+            j += 1
+        else
+            if tracer === nothing
+                ρ_tensors = vcat(ρ_tensors, ρi)
+            else
+                ρi = contract(tracer, ρi)
+                ρ_tensors = vcat(ρ_tensors, ρi)
+                tracer = nothing
+            end
+        end
+    end
+
+    if tracer !== nothing
+        ρi = contract(tracer, ρ_tensors[end])
+        ρ_tensors = vcat(ρ_tensors[1:end-1], ρi)
+    end
+
+    return MPO(ρ_tensors)
+end
+
 function projective_measurement(ρ::MPO; indices=1:length(ρ), reset=nothing)
     N = length(ρ)
     
@@ -499,12 +534,11 @@ function projective_measurement(ψs::Vector{MPS}; kwargs...)
     ψs_out = MPS[]
     res_out = Vector{Vector{Int64}}()
     for ψ in ψs
-        ψ, res = projective_measurement(ψ; kwargs...)
+        ψ = projective_measurement(ψ; kwargs...)
         ψs_out = vcat(ψs_out, [ψ])
-        res_out = vcat(res_out, [res])
     end
 
-    return ψs_out, res_out
+    return ψs_out
 end
 
 function projective_measurement(ρs::Vector{MPO}; kwargs...)
@@ -514,7 +548,7 @@ function projective_measurement(ρs::Vector{MPO}; kwargs...)
         ρs_out = vcat(ρs_out, [ρ])
     end
 
-    return ρs_out, nothing
+    return ρs_out
 end
 
 
