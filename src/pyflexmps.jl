@@ -12,19 +12,20 @@ function __init__()
     copy!(pfs, pyimport("pyflexmps"))
     copy!(np, pyimport("numpy"))
     copy!(defined_operators, [])
+    for (s, m) in pfs.sigma._matrices
+        define_op(pfs.sigma(s, 1))
+    end
 end
 
 function define_op(op; site_type="Qubit", prepend="pfs")
     global defined_operators
-
     matrix = Array(np.asarray(op.matrix, dtype="float64"))
     name = "$(prepend)_$(op.s)"
     op_type = typeof(OpName(name))
     site_type = typeof(SiteType(site_type))
 
     if !(name in defined_operators)
-        @eval ITensors op(::$op_type, ::$site_type) = $matrix
-        println(op_type)
+        @eval ITensors.op(::$op_type, ::$site_type) = $matrix
         push!(defined_operators, name)
     end
     

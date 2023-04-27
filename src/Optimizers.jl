@@ -112,7 +112,7 @@ end
 #=
 function +(grads1::Zygote.Grads, grads2::Zygote.Grads)
     @assert grads1.params == grads2.params "The gradients do not have the same parameters"
-    out = copy(grads1)
+    out = copy(grads1)º
     for p in grads1.params
         out.grads[p] = grads1[p] .+ grads2[p]
     end
@@ -124,9 +124,9 @@ function +(grads1::Zygote.Grads, grads2::Zygote.Grads) # This is the one that is
     @assert grads1.params == grads2.params "The gradients do not have the same parameters"
     out = copy(grads1)
     for i in 1:length(out.params)
+        @assert out.params[i] == grads1.params[i] == grads2.params[i] "The gradients do not have the same parameters"
         out.grads[out.params[i]] = grads1[grads1.params[i]] .+ grads2[grads2.params[i]]
     end
-
     return out
 end
 

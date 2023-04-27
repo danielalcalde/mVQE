@@ -1,5 +1,7 @@
 module Misc
 using JLD2
+using Random
+using Distributed
 
 function get_bit_string(n)
     b = Matrix{Int}(undef, n, 2^n)
@@ -19,16 +21,16 @@ function Base.get(x::Vector, i::Int, default)
 end
 
 # Get ancillas indices
-function get_ancillas_indices(N_state::Int, ancilla_frequency::Int)
+function get_ancilla_indices(N_state::Int, ancilla_frequency::Int)
     N = N_state * (ancilla_frequency + 1) - ancilla_frequency
-    ancillas_indices = [i for i in 1:N if mod1(i, ancilla_frequency+1)!=1]
+    ancilla_indices = [i for i in 1:N if mod1(i, ancilla_frequency+1)!=1]
     state_indices = [i for i in 1:N if mod1(i, ancilla_frequency+1)==1]
-    return state_indices, ancillas_indices, N
+    return state_indices, ancilla_indices, N
 end
 
-function get_ancillas_indices(N_state::Int, pattern::Vector{Bool})
+function get_ancilla_indices(N_state::Int, pattern::Vector{Bool})
     @assert any(pattern) "There is no physical states"
-    ancillas_indices = Vector{Int}()
+    ancilla_indices = Vector{Int}()
     state_indices = Vector{Int}()
 
     l = length(pattern)
@@ -37,12 +39,12 @@ function get_ancillas_indices(N_state::Int, pattern::Vector{Bool})
         if pattern[mod1(N, l)]
             push!(state_indices, N)
         else
-            push!(ancillas_indices, N)
+            push!(ancilla_indices, N)
         end
         
 
         if length(state_indices) >= N_state && mod1(N, l) == l
-            return state_indices, ancillas_indices, N
+            return state_indices, ancilla_indices, N
         end
 
         N += 1

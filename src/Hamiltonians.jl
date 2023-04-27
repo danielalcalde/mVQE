@@ -72,16 +72,18 @@ function hamiltonian_aklt_half(hilbert_state; sublattice=nothing, kwargs...)
         N_state = length(sublattice)
     end
     
-
     ham_aklt = hamiltonian_aklt_half_symb(;kwargs...)
     ham_spin1 = hamiltonian_aklt_spin1_symb(;kwargs...)
+    
+    op1 = convert_sympy_to_opsum(ham_aklt, Vector(1:2:N_state-2); sublattice=sublattice)
+    op2 = convert_sympy_to_opsum(ham_spin1, Vector(1:2:N_state); sublattice=sublattice)
 
-    sites = Vector(1:2:N_state-2)
-    op1 = convert_sympy_to_opsum(ham_aklt, sites; sublattice=sublattice)
+    
+    #return MPO(op1 + op2, hilbert_state), MPO(op1, hilbert_state), MPO(op2, hilbert_state)
+    # Use invokelatest to avoid a worldline conflict with pyflexmps
+    return Base.invokelatest(MPO, op1 + op2, hilbert_state), Base.invokelatest(MPO, op1, hilbert_state), Base.invokelatest(MPO, op2, hilbert_state)
 
-    sites = Vector(1:2:N_state)
-    op2 = convert_sympy_to_opsum(ham_spin1, sites; sublattice=sublattice)
-    return MPO(op1 + op2, hilbert_state), MPO(op1, hilbert_state), MPO(op2, hilbert_state)
+
 end
 
 end # module

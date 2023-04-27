@@ -930,9 +930,9 @@ version = "2.4.2"
 
 [[deps.PastaQ]]
 deps = ["ChainRulesCore", "HDF5", "ITensors", "JLD2", "LinearAlgebra", "Observers", "Optimisers", "Printf", "Random", "Requires", "StatsBase"]
-git-tree-sha1 = "f5c9bb495ffe3c4311bf903f8eaa6e9fe55a2857"
+git-tree-sha1 = "4f1c7b4bebb9a30b79611ec70c7424dd7153a80f"
 uuid = "30b07047-aa8b-4c78-a4e8-24d720215c19"
-version = "0.0.24"
+version = "0.0.20"
 
 [[deps.Pickle]]
 deps = ["DataStructures", "InternedStrings", "Serialization", "SparseArrays", "Strided", "StringEncodings", "ZipFile"]

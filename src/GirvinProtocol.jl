@@ -4,9 +4,9 @@ using ITensors
 using Flux
 using Zygote
 
-using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
+using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit, VariationalMeasurementMCFeedback
 using mVQE: Circuits
-using mVQE.Misc: get_ancillas_indices
+using mVQE.Misc: get_ancilla_indices
 
 struct GirvinCircuit <: AbstractVariationalCircuit
     params::Matrix{Float64}
@@ -77,7 +77,7 @@ function Circuits.generate_circuit(model::GirvinCorrCircuit; params=nothing)
     N = size(params, 1)
     N_state = N * 4
     
-    state_indices, = Zygote.@ignore get_ancillas_indices(N_state, [false, true, true, true, true, false])
+    state_indices, = Zygote.@ignore get_ancilla_indices(N_state, [false, true, true, true, true, false])
     gates = Vector()
     
     for site in 1:N
@@ -136,7 +136,7 @@ function (t::GirvinCorrectionNetwork)(M::Vector{T}) where T <: Integer
     Ns_spin1 = length(M)
     M = M[2:end-1]
     
-    @assert mod(length(M), 2) == 0
+    @assert mod(length(M), 2) == 0 "M must have even length (got $(length(M)))"
     
     M = reshape(M, (2, Int(length(M)/2)))'
     angles = zeros((Ns_spin1, 4))
@@ -149,6 +149,13 @@ function (t::GirvinCorrectionNetwork)(M::Vector{T}) where T <: Integer
     end
     return angles
 end
+end
+
+function GirvinMCFeedback(N_state::Int, ancilla_indices::Vector{Int})
+    vmodels = [GirvinCircuitIdeal(N_state), GirvinCorrCircuit(Int(N_state/2))]
+    dense(x, y) = GirvinCorrectionNetwork()
+    model = VariationalMeasurementMCFeedback(vmodels, [dense], ancilla_indices)
+    return model
 end
 
 end # module

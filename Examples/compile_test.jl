@@ -39,7 +39,7 @@ using mVQE.Layers: Rylayer, CXlayer, Rxlayer
 using mVQE.Circuits: runcircuit, VariationalCircuitRy, VariationalMeasurement, VariationalMeasurementMC
 using mVQE.Circuits: AbstractVariationalMeasurementCircuit, AbstractVariationalCircuit
 using mVQE: loss, optimize_and_evolve
-using mVQE.Misc: get_ancillas_indices, pprint
+using mVQE.Misc: get_ancilla_indices, pprint
 using mVQE.Optimizers: OptimizerWrapper
 end
 
@@ -51,7 +51,7 @@ noise = (1 => ("depolarizing", (p = 0,)),
         2 => ("depolarizing", (p = 0.0,)))
 
 # Define the ancilla indices
-state_indices, ancillas_indices, N = get_ancillas_indices(N_state, 1)
+state_indices, ancilla_indices, N = get_ancilla_indices(N_state, 1)
 
 # build MPO "cost function"
 hilbert = qubits(N)

@@ -113,6 +113,17 @@ function get_loss_and_grad_threaded(ψs, H::mVQE.MPO; samples::Int=1, kwargs...)
     return loss_and_grad_threaded
 end
 
+function fix_grads(grads::Zygote.Grads, model::T) where {T}
+    @assert hasmethod(Flux.params, (T,)) "The model does not have a params method"
+    params = Flux.params(model)
+    d = IdDict()
+    for i in 1:length(params)
+        @assert grads.params[i] == params[i] "The params of the model and the grads do not match"
+        d[params[i]] = grads[grads.params[i]]
+    end
+    return Zygote.Grads(d, params)
+end
+
 function get_loss_and_grad_distributed(ψs, H::mVQE.MPO; samples::Int=1, kwargs...)
     nthreads = length(workers())
             
@@ -124,22 +135,25 @@ function get_loss_and_grad_distributed(ψs, H::mVQE.MPO; samples::Int=1, kwargs.
         # Split the samples into nthreads
         samples_per_process = samples ÷ nthreads
     end
-    @everywhere @eval  begin 
+    @everywhere @eval Main begin 
         using mVQE
+        using Random
     end
 
     sendto(workers(), ψs=ψs, H=H, samples=samples, samples_per_process=samples_per_process, kwargs=kwargs)
-
-    @everywhere begin
+    @everywhere @eval Main begin
         function cache(model::mVQE.AbstractVariationalCircuit)
             return mVQE.loss_and_grad(ψs, H, model, samples_per_process; kwargs...) / samples
         end
     end
 
     function loss_and_grad_distributed(model::mVQE.AbstractVariationalCircuit)
-        return @distributed (+) for i = 1:samples
-            cache(model) 
+        seed = rand(UInt)
+        l, grads = @distributed (+) for i = 1:samples
+            Random.seed!(seed + i)
+            Main.cache(model) 
         end
+        return l, fix_grads(grads, model)
     end
     return loss_and_grad_distributed
 end
@@ -164,10 +178,6 @@ function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCirc
         loss_and_grad_serial(model) = loss_and_grad(ψs, H, model, samples; kwargs...)
         loss_and_grad_local = loss_and_grad_serial
     end
-    println("aaaaaaaaaa")
-    println(loss_and_grad(ψs, H, model, samples; kwargs...))
-    println(loss_and_grad_local(model))
-    println("aaaaaaaaaa")
     model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer)
     
     misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
