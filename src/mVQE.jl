@@ -28,8 +28,8 @@ include("Layers.jl")
 include("Circuits.jl")
 include("GirvinProtocol.jl")
 
-using mVQE.ITensorsExtension: VectorAbstractMPS, States, projective_measurement
-using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
+using ..ITensorsExtension: VectorAbstractMPS, States, projective_measurement
+using ..Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
 
 
 # Cost function
@@ -46,7 +46,7 @@ function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit; kwargs...)
     return loss(Uψ, H; kwargs...)
 end
 
-function mVQE.loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; compute_std=false, parallel=false, kwargs...)
+function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; compute_std=false, parallel=false, kwargs...)
     if parallel
         losses = ThreadsX.collect(loss(ψ, H, model; kwargs...) for _ in 1:samples)
     else
@@ -86,15 +86,15 @@ function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit; k
 end
 
 function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; kwargs...)
-    g = mVQE.loss_and_grad(ψs, H, model; kwargs...)
+    g = loss_and_grad(ψs, H, model; kwargs...)
     for _ in 1:samples - 1
-        g += mVQE.loss_and_grad(ψs, H, model; kwargs...)
+        g += loss_and_grad(ψs, H, model; kwargs...)
     end
     return g / samples
 
 end
 
-function get_loss_and_grad_threaded(ψs, H::mVQE.MPO; samples::Int=1, kwargs...)
+function get_loss_and_grad_threaded(ψs, H::MPO; samples::Int=1, kwargs...)
     # Get the number of threads
     nthreads = Threads.nthreads()
 
@@ -124,7 +124,7 @@ function fix_grads(grads::Zygote.Grads, model::T) where {T}
     return Zygote.Grads(d, params)
 end
 
-function get_loss_and_grad_distributed(ψs, H::mVQE.MPO; samples::Int=1, kwargs...)
+function get_loss_and_grad_distributed(ψs, H::MPO; samples::Int=1, kwargs...)
     nthreads = length(workers())
             
     # If the number of threads is larger than the number of states, set the number of threads to the number of states
@@ -142,12 +142,12 @@ function get_loss_and_grad_distributed(ψs, H::mVQE.MPO; samples::Int=1, kwargs.
 
     sendto(workers(), ψs=ψs, H=H, samples=samples, samples_per_process=samples_per_process, kwargs=kwargs)
     @everywhere @eval Main begin
-        function cache(model::mVQE.AbstractVariationalCircuit)
-            return mVQE.loss_and_grad(ψs, H, model, samples_per_process; kwargs...) / samples
+        function cache(model::AbstractVariationalCircuit)
+            return loss_and_grad(ψs, H, model, samples_per_process; kwargs...) / samples
         end
     end
 
-    function loss_and_grad_distributed(model::mVQE.AbstractVariationalCircuit)
+    function loss_and_grad_distributed(model::AbstractVariationalCircuit)
         seed = rand(UInt)
         l, grads = @distributed (+) for i = 1:samples
             Random.seed!(seed + i)

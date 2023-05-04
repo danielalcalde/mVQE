@@ -2,6 +2,7 @@ module Misc
 using JLD2
 using Random
 using Distributed
+using DataStructures: DefaultDict
 
 function get_bit_string(n)
     b = Matrix{Int}(undef, n, 2^n)
@@ -10,6 +11,21 @@ function get_bit_string(n)
         b[:, i+1] .= [Int(i)-48 for i in s[length(s)-n+1:end]]
     end
     return b
+end
+
+function dict_to_string(a::Dict)
+    result = ""
+    
+    for (i, (key, value)) in enumerate(a)
+        
+        if i != 1
+            result *= "_"
+        end
+        
+        result *= "$(key)=$(value)"
+    end
+    
+    return result
 end
 
 function Base.get(x::Vector, i::Int, default)
@@ -82,9 +98,8 @@ function pprint(d::Dict)
 end
 
 # Load a directory of files
-function load_dir(dir; parameter=nothing)
+function load_dir(dir; parameter=nothing, parameter_list=false)
     files = readdir(dir)
-    
     
     if parameter isa Vector
         d = Dict()
@@ -110,7 +125,17 @@ function load_dir(dir; parameter=nothing)
         
     elseif parameter !== nothing
         d = Dict(file[1:end-5] => load("$dir/$file") for file in files if file[end-4:end]==".jld2")
-        d = Dict(value["params"][parameter] => value for (file, value) in d)
+        if parameter_list
+            dd = DefaultDict(Vector)
+            for (key, value) in d
+                push!(dd[value["params"][parameter]], value)
+            end
+            d = dd
+        else
+            
+            d = Dict(value["params"][parameter] => value for (file, value) in d)
+        end
+
         return sort(collect(keys(d))), d
     else
         d = Dict(file[1:end-5] => load("$dir/$file") for file in files if file[end-4:end]==".jld2")

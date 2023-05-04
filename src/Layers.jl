@@ -1,8 +1,14 @@
 module Layers
 
+Rzlayer(θ) = [("Rz", i, (θ = θi,)) for (i, θi) in enumerate(θ)]
 Rylayer(θ) = [("Ry", i, (θ = θi,)) for (i, θi) in enumerate(θ)]
-
 Rxlayer(θ) = [("Rx", i, (θ = θi,)) for (i, θi) in enumerate(θ)]
+
+# brick-layer of CRX gates
+function CRxlayer(N, Π, θs)
+    start = isodd(Π) ? 1 : 2
+    return [("CRx", (j, j + 1), (θ = θs[i],)) for (i, j) in enumerate(start:2:(N - 1))]
+end
 
 # brick-layer of CX gates
 function CXlayer(N, Π)

@@ -19,9 +19,9 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
     
     history = Matrix{Float64}(undef, optimizer.maxiter, 3)
 
-    niter = 0
-    local loss, gradient_
+    local loss, gradient_, niter_
     for niter in 1:optimizer.maxiter
+        niter_ = niter
         loss, gradient_ = loss_and_grad(θ)
         norm_grad = norm(gradient_)
         
@@ -55,8 +55,11 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
         flush(stdout)
         flush(stderr)
     end
-    
-    return θ, loss, gradient_, niter, history
+
+    # Truncating the history
+    history = history[1:niter_, :]
+
+    return θ, loss, gradient_, niter_, history
 end
 
 

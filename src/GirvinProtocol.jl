@@ -4,9 +4,9 @@ using ITensors
 using Flux
 using Zygote
 
-using mVQE.Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit, VariationalMeasurementMCFeedback
+using ..Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit, VariationalMeasurementMCFeedback
 using mVQE: Circuits
-using mVQE.Misc: get_ancilla_indices
+using ..Misc: get_ancilla_indices
 
 struct GirvinCircuit <: AbstractVariationalCircuit
     params::Matrix{Float64}
@@ -71,7 +71,7 @@ Base.size(model::GirvinCorrCircuit) = size(model.params)
 Base.size(model::GirvinCorrCircuit, i::Int) = size(model.params, i)
 
 
-function Circuits.generate_circuit(model::GirvinCorrCircuit; params=nothing)
+function Circuits.generate_circuit(::GirvinCorrCircuit; params=nothing)
     @assert params !== nothing
     @assert size(params, 2) == 4
     N = size(params, 1)

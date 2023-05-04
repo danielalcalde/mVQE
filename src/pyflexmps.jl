@@ -12,9 +12,9 @@ function __init__()
     copy!(pfs, pyimport("pyflexmps"))
     copy!(np, pyimport("numpy"))
     copy!(defined_operators, [])
-    for (s, m) in pfs.sigma._matrices
-        define_op(pfs.sigma(s, 1))
-    end
+    #for (s, m) in pfs.sigma._matrices
+    #    define_op(pfs.sigma(s, 1))
+    #end
 end
 
 function define_op(op; site_type="Qubit", prepend="pfs")
