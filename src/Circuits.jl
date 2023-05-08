@@ -97,6 +97,7 @@ end
 abstract type AbstractVariationalMeasurementCircuit <: AbstractVariationalCircuit end
 Flux.trainable(a::AbstractVariationalMeasurementCircuit) = (a.vcircuits,)
 Base.length(a::AbstractVariationalMeasurementCircuit) = length(a.vcircuits)
+Base.getindex(a::AbstractVariationalMeasurementCircuit, i::Int64) = a.vcircuits[i]
 
 struct VariationalMeasurement <: AbstractVariationalMeasurementCircuit
     vcircuits:: Vector{AbstractVariationalCircuit}

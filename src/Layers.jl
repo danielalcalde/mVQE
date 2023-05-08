@@ -10,6 +10,12 @@ function CRxlayer(N, Π, θs)
     return [("CRx", (j, j + 1), (θ = θs[i],)) for (i, j) in enumerate(start:2:(N - 1))]
 end
 
+# brick-layer of CRX gates
+function CRylayer(N, Π, θs)
+    start = isodd(Π) ? 1 : 2
+    return [("CRy", (j, j + 1), (θ = θs[i],)) for (i, j) in enumerate(start:2:(N - 1))]
+end
+
 # brick-layer of CX gates
 function CXlayer(N, Π)
     start = isodd(Π) ? 1 : 2
