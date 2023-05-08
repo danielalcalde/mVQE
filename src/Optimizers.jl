@@ -14,8 +14,14 @@ struct OptimizerWrapper
     OptimizerWrapper(optimizer; maxiter=50, gradtol=1e-10, verbosity=0) = new(optimizer, maxiter, gradtol, verbosity)
 end
 
-function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; finalize! = OptimKit._finalize!) where {T}
-    θ = deepcopy(θ)
+callback_(args...; kwargs...) = nothing
+
+function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper;
+                          copy=true,
+                          finalize! = OptimKit._finalize!, callback = (args...; kwargs...) -> nothing) where {T}
+    if copy
+        θ = deepcopy(θ)
+    end
     
     history = Matrix{Float64}(undef, optimizer.maxiter, 3)
 
@@ -24,6 +30,9 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
         niter_ = niter
         loss, gradient_ = loss_and_grad(θ)
         norm_grad = norm(gradient_)
+
+        # Finalize
+        θ, loss, gradient_ = finalize!(θ, loss, gradient_, niter)
         
         if hasmethod(Flux.params, (T,))
             # It is a flux model
@@ -36,6 +45,10 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
 
         # Saving the loss and norms
         history[niter, :] .= loss, norm_grad, norm_θ
+
+        # Callback
+        misc = Dict("loss" => loss, "gradient" => gradient_, "niter" => niter, "history" => history[1:niter, :])
+        callback(; loss_value=loss, model=θ, misc=misc, niter=niter)
         
         if optimizer.verbosity >= 2
             @info "$(typeof(optimizer.optimizer)): iter $niter: f = $loss, ‖∇f‖ = $(norm_grad), ‖θ‖ = $(norm_θ)"
@@ -46,8 +59,6 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper; fi
         if norm_grad < optimizer.gradtol
             break
         end
-
-        θ, loss, gradient_ = finalize!(θ, loss, gradient_, niter)
     end
 
     if optimizer.verbosity == 1

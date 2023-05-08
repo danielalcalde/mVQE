@@ -14,6 +14,7 @@ import Flux
 
 using ITensors: AbstractMPS
 
+include("FluxExtensions.jl")
 include("pyflexmps.jl")
 include("Optimizers.jl")
 include("Misc.jl")
@@ -30,7 +31,7 @@ include("GirvinProtocol.jl")
 
 using ..ITensorsExtension: VectorAbstractMPS, States, projective_measurement
 using ..Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
-
+using ..Optimizers: callback_, optimize
 
 # Cost function
 function loss(ψ::MPS, H::MPO; kwargs...)
@@ -135,14 +136,14 @@ function get_loss_and_grad_distributed(ψs, H::MPO; samples::Int=1, kwargs...)
         # Split the samples into nthreads
         samples_per_process = samples ÷ nthreads
     end
-    @everywhere @eval Main begin 
-        using mVQE
+    @everywhere @eval Main begin
+        using mVQE: loss_and_grad, AbstractVariationalCircuit
         using Random
     end
 
     sendto(workers(), ψs=ψs, H=H, samples=samples, samples_per_process=samples_per_process, kwargs=kwargs)
     @everywhere @eval Main begin
-        function cache(model::AbstractVariationalCircuit)
+        function loss_and_grad_with_args(model::AbstractVariationalCircuit)
             return loss_and_grad(ψs, H, model, samples_per_process; kwargs...) / samples
         end
     end
@@ -151,7 +152,7 @@ function get_loss_and_grad_distributed(ψs, H::MPO; samples::Int=1, kwargs...)
         seed = rand(UInt)
         l, grads = @distributed (+) for i = 1:samples
             Random.seed!(seed + i)
-            Main.cache(model) 
+            Main.loss_and_grad_with_args(model)
         end
         return l, fix_grads(grads, model)
     end
@@ -160,8 +161,10 @@ end
 
 
 # Optimize with gradient descent
-function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCircuit,
-                             ; optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false, threaded=false, kwargs...)
+function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCircuit;
+                             optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false,
+                             threaded=false, callback=callback_, finalize! = OptimKit._finalize!,
+                             kwargs...)
     
     local loss_and_grad_local
     
@@ -178,7 +181,7 @@ function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCirc
         loss_and_grad_serial(model) = loss_and_grad(ψs, H, model, samples; kwargs...)
         loss_and_grad_local = loss_and_grad_serial
     end
-    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer)
+    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer; callback, finalize!)
     
     misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
 
@@ -186,7 +189,9 @@ function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCirc
 end
 
 function optimize_and_evolve(k::Int, measurement_indices::Vector{Int}, ρ::States, H::MPO, model::AbstractVariationalCircuit
-                             ;k_init=1, misc=Vector(undef, k), θs=Vector(undef, k), verbose=false, callback=(; kwargs_...) -> true, kwargs...)
+                             ;k_init=1, misc=Vector(undef, k), θs=Vector(undef, k), verbose=false,
+                             callback=(; kwargs_...) -> true, finalize! = OptimKit._finalize!,
+                             kwargs...)
 
     @assert k_init <= k
     @assert length(θs) == length(misc)
