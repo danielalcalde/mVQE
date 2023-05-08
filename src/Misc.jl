@@ -98,19 +98,40 @@ function pprint(d::Dict)
 end
 
 # Load a directory of files
-function load_dir(dir; parameter=nothing, parameter_list=false)
+"""    
+load_dir(dir; parameter=nothing, parameter_list=false, sort_parameter=true, parameter_type_func=x->x)
+
+Load a directory of files. If parameter is specified, the files are sorted according to the parameter. If parameter_list is true, the files are grouped according to the parameter. If sort_parameter is true, the parameter is sorted. If parameter_type_func is specified, the parameter is converted using the function before sorting.
+"""
+function load_dir(dir; parameter=nothing, parameter_list=false, sort_parameter=true, parameter_type_func=x->x)
     files = readdir(dir)
     
     if parameter isa Vector
+        if  !(parameter_type_func isa Vector)
+            parameter_type_func = [parameter_type_func for _ in 1:length(parameter)]
+        end
+        
         d = Dict()
-                
-        for file in files
-            if file[end-4:end]==".jld2"
-                data = load("$dir/$file")
-                params = [data["params"][para] for para in parameter]
-                d[params] = data
+        if parameter_list
+            dd = DefaultDict(Vector)
+            for file in files
+                if file[end-4:end]==".jld2"
+                    data = load("$dir/$file")
+                    params = [parameter_type_func_(data["params"][para]) for (parameter_type_func_, para) in zip(parameter_type_func, parameter)]
+                    push!(dd[params], data)
+                end
             end
-        end 
+            d = dd
+        
+        else
+            for file in files
+                if file[end-4:end]==".jld2"
+                    data = load("$dir/$file")
+                    params = [parameter_type_func_(data["params"][para]) for (parameter_type_func_, para) in zip(parameter_type_func, parameter)]
+                    d[params] = data
+                end
+            end
+        end
         
         parameter_set = [Set() for _ in 1:length(parameter)]
         for key in keys(d)
@@ -118,8 +139,13 @@ function load_dir(dir; parameter=nothing, parameter_list=false)
                 parameter_set[i] = push!(parameter_set[i], key[i])
             end
         end
-        paramter_vec = [sort(collect(s)) for s in parameter_set]
         
+        if sort_parameter
+            paramter_vec = [sort(collect(s)) for s in parameter_set]
+        else
+            paramter_vec = [collect(s) for s in parameter_set]
+        end
+
         return paramter_vec, d
         
         
@@ -128,20 +154,41 @@ function load_dir(dir; parameter=nothing, parameter_list=false)
         if parameter_list
             dd = DefaultDict(Vector)
             for (key, value) in d
-                push!(dd[value["params"][parameter]], value)
+                parameter_value = parameter_type_func(value["params"][parameter])
+                push!(dd[parameter_value], value)
             end
             d = dd
         else
             
-            d = Dict(value["params"][parameter] => value for (file, value) in d)
+            d = Dict(parameter_type_func(value["params"][parameter]) => value for (file, value) in d)
         end
+        params = collect(keys(d))
 
-        return sort(collect(keys(d))), d
+        if sort_parameter
+            params = sort(params)
+        end
+        return params, d
     else
         d = Dict(file[1:end-5] => load("$dir/$file") for file in files if file[end-4:end]==".jld2")
     end
     
     return d
+end
+
+function simple_spinhalf_to_spin1_vec(spinhalf_vec)
+    spin1_vec = Vector{Float64}(undef, length(spinhalf_vec)÷2)
+    for i in 1:length(spin1_vec)
+        if spinhalf_vec[2i-1] == 1 && spinhalf_vec[2i] == 1
+            spin1_vec[i] = 0
+        elseif spinhalf_vec[2i-1] == 2 && spinhalf_vec[2i] == 1
+            spin1_vec[i] = 1
+        elseif spinhalf_vec[2i-1] == 1 && spinhalf_vec[2i] == 2
+            spin1_vec[i] = -1
+        else
+            spin1_vec[i] = 100
+        end
+    end
+    return spin1_vec
 end
 
 
