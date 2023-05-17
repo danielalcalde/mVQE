@@ -16,9 +16,11 @@ end
 
 callback_(args...; kwargs...) = nothing
 
-function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper;
+function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper,
+                           callback = (args...; kwargs...) -> nothing;
                           copy=true,
-                          finalize! = OptimKit._finalize!, callback = (args...; kwargs...) -> nothing) where {T}
+                          finalize! = OptimKit._finalize!, precondition=OptimKit._precondition
+                          ) where {T}
     if copy
         θ = deepcopy(θ)
     end
@@ -30,6 +32,9 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper;
         niter_ = niter
         loss, gradient_ = loss_and_grad(θ)
         norm_grad = norm(gradient_)
+
+        # Precondition
+        gradient_ = precondition(θ, deepcopy(gradient_))
 
         # Finalize
         θ, loss, gradient_ = finalize!(θ, loss, gradient_, niter)
@@ -70,6 +75,41 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper;
     # Truncating the history
     history = history[1:niter_, :]
 
+    return θ, loss, gradient_, niter_, history
+end
+
+
+
+# Change the OptimKit.optimize function to work with callbacks
+function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimKit.OptimizationAlgorithm,
+                           callback;
+                           copy=true, finalize! = OptimKit._finalize!, 
+                           ) where {T}
+    if copy
+        θ = deepcopy(θ)
+    end
+    
+    history = Matrix{Float64}(undef, optimizer.maxiter, 3)
+
+    function finalize_2!(θ, loss, gradient_, niter)
+        norm_grad = norm(gradient_)
+        local norm_θ
+        if hasmethod(Flux.params, (T,))
+            norm_θ = norm(Flux.params(θ))
+        else
+            norm_θ = norm(θ)
+        end
+
+        θ, loss, gradient_ = finalize!(θ, loss, gradient_, niter)
+        history[niter, :] .= loss, norm_grad, norm_θ
+
+        # Callback
+        misc = Dict("loss" => loss, "gradient" => gradient_, "niter" => niter, "history" => history[1:niter, :])
+        callback(; loss_value=loss, model=θ, misc=misc, niter=niter)
+        return θ, loss, gradient_
+    end
+    θ, loss, gradient_, niter_, history2 = OptimKit.optimize(loss_and_grad, θ, optimizer; finalize! = finalize_2!)
+    
     return θ, loss, gradient_, niter_, history
 end
 

@@ -27,6 +27,62 @@ function Base.size(model::AbstractVariationalCircuit, i::Int)
     throw("Size not defined for $(typeof(model))")
 end
 
+function get_depth(model::AbstractVariationalCircuit)
+    throw("get_depth not defined for $(typeof(model))")
+end
+
+function get_N(model::AbstractVariationalCircuit)
+    throw("get_N not defined for $(typeof(model))")
+end
+
+Base.show(io::IO, c::AbstractVariationalCircuit) = print(io, "$(typeof(c))(N=$(get_N(c)), depth=$(get_depth(c)))")
+
+function generate_circuit(model::AbstractVariationalCircuit; params=nothing)
+    if params === nothing
+        @assert size(model.params, 1) > 0 "$(typeof(model)) is empty"
+        params = model.params
+    end
+
+    circuit = Tuple[]
+
+    N = N = get_N(model)
+    depth = get_depth(model)
+
+    return generate_circuit!(circuit, model; params, N, depth)
+end
+
+
+struct VariationalCircuitComposed <: AbstractVariationalCircuit
+    circuits::Vector{AbstractVariationalCircuit}
+    function VariationalCircuitComposed(circuits::Vector{T}) where T <: AbstractVariationalCircuit
+        for circuit in circuits
+            @assert get_N(circuit) == get_N(circuits[1]) "All circuits must have the same number of qubits"
+        end
+        new(circuits)
+    end
+end
+Flux.@functor VariationalCircuitComposed
+Base.size(model::VariationalCircuitComposed) = collect(size(model.circuits[i]) for i in 1:length(model.circuits))
+Base.size(model::VariationalCircuitComposed, i::Int) = size(model.circuits[i])
+get_N(model::VariationalCircuitComposed) = get_N(model.circuits[1])
+get_depth(model::VariationalCircuitComposed) = sum(get_depth(circ) for circ in model.circuits)
+
+function generate_circuit(model::VariationalCircuitComposed; params=nothing)
+    if params === nothing
+        params = [nothing for _ in model.circuits]
+    else
+        @assert length(params) == length(model.circuits) "Number of parameters must match number of circuits"
+    end
+
+    circuit = Tuple[]
+
+    for (i, circ) in enumerate(model.circuits)
+        circuit = vcat(circuit, generate_circuit(circ; params=params[i]))
+    end
+    return circuit
+end
+
+
 # Variational circuit with Ry gates
 struct VariationalCircuitRy <: AbstractVariationalCircuit
     params::Matrix{Float64}
@@ -37,57 +93,14 @@ end
 Flux.@functor VariationalCircuitRy
 Base.size(model::VariationalCircuitRy) = size(model.params)
 Base.size(model::VariationalCircuitRy, i::Int) = size(model.params, i)
-Base.show(io::IO, c::VariationalCircuitRy) = print(io, "VariationalCircuitRy(N=$(size(c, 1)), depth=$(size(c, 2)))")
 get_depth(model::VariationalCircuitRy) = size(model.params, 2)
 get_N(model::VariationalCircuitRy) = size(model.params, 1)
 
-function generate_circuit(model::VariationalCircuitRy; params=nothing)
-    if params === nothing
-        @assert size(model.params, 1) > 0 "VariationalCircuitRy is empty"
-        params = model.params
-    end
 
-    circuit = Tuple[]
-
-    N = N = get_N(model)
-    depth = get_depth(model)
-
+function generate_circuit!(circuit, ::VariationalCircuitRy; params=nothing, N::Integer, depth::Integer)
     for d in 1:depth
         circuit = vcat(circuit, CXlayer(N, d))
         circuit = vcat(circuit, Rylayer(params[:, d]))
-    end
-    return circuit
-end
-
-# Variational circuit with Ry, Rx, Rz and CRx gates
-struct VariationalCircuitOverparametrizied <: AbstractVariationalCircuit
-    params::Array{Float64, 3}
-    VariationalCircuitOverparametrizied(params::Array{Float64, 3}) = new(params)
-    VariationalCircuitOverparametrizied(N::Int, depth::Int) = new(2π .* rand(N, 4, depth))
-    VariationalCircuitOverparametrizied() = new(Array{Float64, 3}(undef, 0, 0, 0)) # Empty circuit to be used as a placeholder
-end
-Flux.@functor VariationalCircuitOverparametrizied 
-Base.size(model::VariationalCircuitOverparametrizied) = size(model.params)
-Base.size(model::VariationalCircuitOverparametrizied, i::Int) = size(model.params, i)
-get_depth(model::VariationalCircuitOverparametrizied) = size(model.params, 3)
-get_N(model::VariationalCircuitOverparametrizied) = size(model.params, 1)
-
-function generate_circuit(model::VariationalCircuitOverparametrizied; params=nothing)
-    if params === nothing
-        @assert size(model.params, 1) > 0 "VariationalCircuitOverparametrizied is empty"
-        params = model.params
-    end
-
-    circuit = Tuple[]
-
-    N = get_N(model)
-    depth = get_depth(model)
-
-    for d in 1:depth
-        circuit = vcat(circuit, Rxlayer(params[:, 1, d]))
-        circuit = vcat(circuit, Rylayer(params[:, 2, d]))
-        circuit = vcat(circuit, Rzlayer(params[:, 3, d]))
-        circuit = vcat(circuit, CRxlayer(N, d, params[:, 4, d]))
     end
     return circuit
 end
@@ -98,6 +111,8 @@ abstract type AbstractVariationalMeasurementCircuit <: AbstractVariationalCircui
 Flux.trainable(a::AbstractVariationalMeasurementCircuit) = (a.vcircuits,)
 Base.length(a::AbstractVariationalMeasurementCircuit) = length(a.vcircuits)
 Base.getindex(a::AbstractVariationalMeasurementCircuit, i::Int64) = a.vcircuits[i]
+get_depth(model::AbstractVariationalMeasurementCircuit) = length(model.vcircuits)
+get_N(model::AbstractVariationalMeasurementCircuit) = get_N(model.vcircuits[1])
 
 struct VariationalMeasurement <: AbstractVariationalMeasurementCircuit
     vcircuits:: Vector{AbstractVariationalCircuit}
@@ -154,6 +169,7 @@ function (circuit::CircuitType)(ψs::VectorAbstractMPS; kwargs...)
 end
 
 
+include("VariationalCircuits/CompleteUnitary.jl")
 include("FeedbackCircuits/FeedbackCircuits.jl")
 
 #end

@@ -235,8 +235,8 @@ function sample_and_probs(ρj::ITensor, s, d)
         projn = ITensor(s)
         projn[s => n] = 1.0
         pnc = (ρj * projn * prime(projn))[]
-        if imag(pnc) > 1e-8
-            @warn "In sample, probability $pnc is complex."
+        if imag(pnc) > 1e-6
+            @warn "Sample probability $pnc is complex."
         end
         pn = real(pnc)
         pdisc += pn

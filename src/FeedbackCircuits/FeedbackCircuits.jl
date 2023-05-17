@@ -16,6 +16,9 @@ Flux.trainable(a::FeedbackCircuit) = (a.model,)
 
 function FeedbackCircuit(vcircuit, model, input_shape)
     output_shape = size(vcircuit)
+    if output_shape isa Vector
+        @assert false "FeedbackCircuit does not support vector output"
+    end
     model = model(prod(input_shape), prod(output_shape))
     model = ReshapeModel(model, output_shape)
     return FeedbackCircuit(vcircuit, model)

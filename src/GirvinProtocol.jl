@@ -123,7 +123,7 @@ param_correction_gates(M) = GirvinCorrectionNetwork()(M) # legacy
 
 struct GirvinCorrectionNetwork end
 Flux.@functor GirvinCorrectionNetwork
-Flux.trainable(a::GirvinCorrectionNetwork) = ()
+Flux.trainable(::GirvinCorrectionNetwork) = ()
 
 function (t::GirvinCorrectionNetwork)(M::Vector{T}) where T <: Integer
     Zygote.@ignore begin

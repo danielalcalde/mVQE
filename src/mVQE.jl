@@ -125,32 +125,34 @@ function fix_grads(grads::Zygote.Grads, model::T) where {T}
     return Zygote.Grads(d, params)
 end
 
-function get_loss_and_grad_distributed(ψs, H::MPO; samples::Int=1, kwargs...)
-    nthreads = length(workers())
+function get_loss_and_grad_distributed(ψs, H::MPO; samples::Int=1, fix_seed=false, kwargs...)
+    #nthreads = length(workers())
             
-    # If the number of threads is larger than the number of states, set the number of threads to the number of states
-    if nthreads > samples
-        samples_per_process = 1
-        nthreads = samples
-    else
-        # Split the samples into nthreads
-        samples_per_process = samples ÷ nthreads
-    end
     @everywhere @eval Main begin
         using mVQE: loss_and_grad, AbstractVariationalCircuit
         using Random
     end
-
-    sendto(workers(), ψs=ψs, H=H, samples=samples, samples_per_process=samples_per_process, kwargs=kwargs)
+    my_secret = Random.randstring(100)
+    sendto(workers(), ψs=ψs, H=H, samples=samples, kwargs=kwargs, secret=my_secret)
     @everywhere @eval Main begin
         function loss_and_grad_with_args(model::AbstractVariationalCircuit)
-            return loss_and_grad(ψs, H, model, samples_per_process; kwargs...) / samples
+            return loss_and_grad(ψs, H, model; kwargs...) / samples
         end
+    end
+    local fixed_seed
+    if fix_seed
+        fixed_seed = rand(UInt)
     end
 
     function loss_and_grad_distributed(model::AbstractVariationalCircuit)
-        seed = rand(UInt)
+        if fix_seed
+            seed = fixed_seed
+        else
+            seed = rand(UInt)
+        end
+
         l, grads = @distributed (+) for i = 1:samples
+            @assert Main.secret == my_secret "The secret does not match, this might happen if get_loss_and_grad_distributed is called twice."
             Random.seed!(seed + i)
             Main.loss_and_grad_with_args(model)
         end
@@ -164,6 +166,7 @@ end
 function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCircuit;
                              optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false,
                              threaded=false, callback=callback_, finalize! = OptimKit._finalize!,
+                             fix_seed=false,
                              kwargs...)
     
     local loss_and_grad_local
@@ -171,17 +174,26 @@ function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCirc
     if parallel && samples > 1
         if  threaded # Deprecated
             println("Warning: threaded is deprecated.")
-            loss_and_grad_local = get_loss_and_grad_threaded(ψs, H; samples=samples, kwargs...)
+            loss_and_grad_local = get_loss_and_grad_threaded(ψs, H; samples, kwargs...)
         
         else # Use Distributed
-            loss_and_grad_local = get_loss_and_grad_distributed(ψs, H; samples=samples, kwargs...)
+            loss_and_grad_local = get_loss_and_grad_distributed(ψs, H; samples, fix_seed, kwargs...)
         end
 
     else
-        loss_and_grad_serial(model) = loss_and_grad(ψs, H, model, samples; kwargs...)
+        local seed
+        if fix_seed
+            seed = rand(UInt)
+        end
+        function loss_and_grad_serial(model)
+            if fix_seed
+                Random.seed!(seed)
+            end
+            return loss_and_grad(ψs, H, model, samples; kwargs...)
+        end
         loss_and_grad_local = loss_and_grad_serial
     end
-    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer; callback, finalize!)
+    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer, callback; finalize!)
     
     misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
 
