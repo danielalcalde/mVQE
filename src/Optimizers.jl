@@ -83,7 +83,7 @@ end
 # Change the OptimKit.optimize function to work with callbacks
 function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimKit.OptimizationAlgorithm,
                            callback;
-                           copy=true, finalize! = OptimKit._finalize!, 
+                           copy=true, finalize! = OptimKit._finalize!, kwargs... 
                            ) where {T}
     if copy
         θ = deepcopy(θ)
@@ -108,7 +108,8 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimKit.Optimizatio
         callback(; loss_value=loss, model=θ, misc=misc, niter=niter)
         return θ, loss, gradient_
     end
-    θ, loss, gradient_, niter_, history2 = OptimKit.optimize(loss_and_grad, θ, optimizer; finalize! = finalize_2!)
+    θ, loss, gradient_, niter_, history2 = OptimKit.optimize(loss_and_grad, θ, optimizer;
+                                                             finalize! = finalize_2!, kwargs...)
     
     return θ, loss, gradient_, niter_, history
 end

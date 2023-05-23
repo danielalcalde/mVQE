@@ -165,8 +165,8 @@ end
 # Optimize with gradient descent
 function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCircuit;
                              optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false,
-                             threaded=false, callback=callback_, finalize! = OptimKit._finalize!,
-                             fix_seed=false,
+                             threaded=false, callback=callback_,
+                             fix_seed=false, kwargs_optim=Dict(),
                              kwargs...)
     
     local loss_and_grad_local
@@ -193,7 +193,7 @@ function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCirc
         end
         loss_and_grad_local = loss_and_grad_serial
     end
-    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer, callback; finalize!)
+    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer, callback; kwargs_optim...)
     
     misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
 
