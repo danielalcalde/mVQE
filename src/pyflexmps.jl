@@ -87,7 +87,11 @@ end
 function convert_sympy_to_opsum(sympy_ham, sites::Vector{Int}; kwargs...)
     sympy_ham = pfs.apply(expand(sympy_ham))
     return add_sympy_to_opsum!(OpSum(), sympy_ham, sites; kwargs...)
-    
+end
+
+function convert_sympy_to_opsums(sympy_ham, sites::Vector{Int}; kwargs...)
+    sympy_ham = pfs.apply(expand(sympy_ham))
+    return [add_sympy_to_opsum!(OpSum(), sympy_ham, [site]; kwargs...) for site in sites]
 end
 
 

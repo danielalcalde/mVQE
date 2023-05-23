@@ -21,6 +21,7 @@ include("Misc.jl")
 include("Hamiltonians.jl")
 
 include("ITensorsExtension.jl")
+include("MPOExtensions.jl")
 
 include("StateFactory.jl")
 
@@ -30,24 +31,29 @@ include("Circuits.jl")
 include("GirvinProtocol.jl")
 
 using ..ITensorsExtension: VectorAbstractMPS, States, projective_measurement
+using ..MPOExtensions: PartialMPO
 using ..Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
 using ..Optimizers: callback_, optimize
 
+PartialMPOs = Union{PartialMPO, Vector{PartialMPO}}
+
+MPOType = Union{MPO, PartialMPO}
+MPOVectorType = Vector{T} where T <: MPOType
+MPOTypes = Union{MPOType, MPOVectorType}
+
 # Cost function
-function loss(ψ::MPS, H::MPO; kwargs...)
-    return real(inner(ψ', H, ψ; kwargs...))
-end
+loss(ψ::MPS, H::MPO; kwargs...) = real(inner(ψ', H, ψ; kwargs...))
+loss(ρ::MPO, H::MPO; kwargs...) = real(inner(ρ, H; kwargs...))
 
-function loss(ρ::MPO, H::MPO; kwargs...)
-    return real(inner(ρ, H; kwargs...))
-end
+loss(ψ::States, H::PartialMPOs; kwargs...) = expect(ψ, H; kwargs...)
+loss(ψ::States, Hs::MPOVectorType; kwargs...) = sum(expect(ψ, H; kwargs...) for H in Hs)
 
-function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit; kwargs...)
+function loss(ψ::States, H::MPOTypes, model::AbstractVariationalCircuit; kwargs...)
     Uψ = model(ψ; kwargs...)
     return loss(Uψ, H; kwargs...)
 end
 
-function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; compute_std=false, parallel=false, kwargs...)
+function loss(ψ::States, H::MPOTypes, model::AbstractVariationalCircuit, samples::Int; compute_std=false, parallel=false, kwargs...)
     if parallel
         losses = ThreadsX.collect(loss(ψ, H, model; kwargs...) for _ in 1:samples)
     else
@@ -61,7 +67,7 @@ function loss(ψ::States, H::MPO, model::AbstractVariationalCircuit, samples::In
     end
 end
 
-function loss(ψs::VectorAbstractMPS, H::MPO; kwargs...)
+function loss(ψs::VectorAbstractMPS, H::MPOTypes; kwargs...)
     E = 0.
     for ψ in ψs
           E += loss(ψ, H; kwargs...)
@@ -79,14 +85,14 @@ function State_length(ψs::VectorAbstractMPS)
     return length(ψs[1])
 end
 
-function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit; kwargs...)
+function loss_and_grad(ψs::States, H::MPOTypes, model::AbstractVariationalCircuit; kwargs...)
     y, ∇ = withgradient(Flux.params(model)) do
         loss(ψs, H, model; kwargs...)
     end
     return [y, ∇]
 end
 
-function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit, samples::Int; kwargs...)
+function loss_and_grad(ψs::States, H::MPOTypes, model::AbstractVariationalCircuit, samples::Int; kwargs...)
     g = loss_and_grad(ψs, H, model; kwargs...)
     for _ in 1:samples - 1
         g += loss_and_grad(ψs, H, model; kwargs...)
@@ -95,7 +101,7 @@ function loss_and_grad(ψs::States, H::MPO, model::AbstractVariationalCircuit, s
 
 end
 
-function get_loss_and_grad_threaded(ψs, H::MPO; samples::Int=1, kwargs...)
+function get_loss_and_grad_threaded(ψs, H::MPOTypes; samples::Int=1, kwargs...)
     # Get the number of threads
     nthreads = Threads.nthreads()
 
@@ -125,7 +131,7 @@ function fix_grads(grads::Zygote.Grads, model::T) where {T}
     return Zygote.Grads(d, params)
 end
 
-function get_loss_and_grad_distributed(ψs, H::MPO; samples::Int=1, fix_seed=false, kwargs...)
+function get_loss_and_grad_distributed(ψs, H::MPOTypes; samples::Int=1, fix_seed=false, kwargs...)
     #nthreads = length(workers())
             
     @everywhere @eval Main begin
@@ -163,7 +169,7 @@ end
 
 
 # Optimize with gradient descent
-function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCircuit;
+function optimize_and_evolve(ψs::States, H::MPOTypes, model::AbstractVariationalCircuit;
                              optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false,
                              threaded=false, callback=callback_,
                              fix_seed=false, kwargs_optim=Dict(),
@@ -200,7 +206,7 @@ function optimize_and_evolve(ψs::States, H::MPO, model::AbstractVariationalCirc
     return loss_v, model_optim, model_optim(ψs; kwargs...), misc
 end
 
-function optimize_and_evolve(k::Int, measurement_indices::Vector{Int}, ρ::States, H::MPO, model::AbstractVariationalCircuit
+function optimize_and_evolve(k::Int, measurement_indices::Vector{Int}, ρ::States, H::MPOTypes, model::AbstractVariationalCircuit
                              ;k_init=1, misc=Vector(undef, k), θs=Vector(undef, k), verbose=false,
                              callback=(; kwargs_...) -> true, finalize! = OptimKit._finalize!,
                              kwargs...)
