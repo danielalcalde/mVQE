@@ -45,8 +45,8 @@ MPOTypes = Union{MPOType, MPOVectorType}
 loss(ψ::MPS, H::MPO; kwargs...) = real(inner(ψ', H, ψ; kwargs...))
 loss(ρ::MPO, H::MPO; kwargs...) = real(inner(ρ, H; kwargs...))
 
-loss(ψ::States, H::PartialMPOs; kwargs...) = expect(ψ, H; kwargs...)
-loss(ψ::States, Hs::MPOVectorType; kwargs...) = sum(expect(ψ, H; kwargs...) for H in Hs)
+loss(ψ::States, H::PartialMPO; kwargs...) = real(expect(ψ, H; kwargs...))
+loss(ψ::States, Hs::MPOVectorType; kwargs...) = sum(real(expect(ψ, H; kwargs...)) for H in Hs)
 
 function loss(ψ::States, H::MPOTypes, model::AbstractVariationalCircuit; kwargs...)
     Uψ = model(ψ; kwargs...)
