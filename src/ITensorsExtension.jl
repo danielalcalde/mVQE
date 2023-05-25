@@ -9,12 +9,19 @@ using Zygote
 VectorAbstractMPS = Union{Vector{MPS}, Vector{MPO}}
 States = Union{VectorAbstractMPS, AbstractMPS} 
 
+graderror(y; error_message="$y can not be differentiated") = y
+Zygote.@adjoint function graderror(y; error_message="$y can not be differentiated")
+    function pull(Δ)
+        error(error_message)
+        return (Δ)
+    end
+    return y, pull
+end
 
-function sample_and_probs_mps(A::ITensor, s, d)
+function sample_and_probs_mps(A::ITensor, s, d; random_number=rand())
     local An, projn, pn
 
     pdisc = 0.
-    r = rand()
     n = 1
     while n <= d
         projn = ITensor(s)
@@ -22,17 +29,16 @@ function sample_and_probs_mps(A::ITensor, s, d)
         An = A * dag(projn)
         pn = real(scalar(dag(An) * An))
         pdisc += pn
-        (r < pdisc) && break
+        (random_number < pdisc) && break
         n += 1
     end
     return n, pn, An
 end
 
-function sample_and_probs_mps2(P::ITensor, ψi::ITensor, s, linkind_P, d)
+function sample_and_probs_mps2(P::ITensor, ψi::ITensor, s, linkind_P, d; random_number=rand())
     local An, projn, prob, Pn
 
     pdisc = 0.
-    r = rand()
     n = 1
     # Remove the prime from the index A.tensor.inds[1]
     if linkind_P !== nothing
@@ -50,13 +56,292 @@ function sample_and_probs_mps2(P::ITensor, ψi::ITensor, s, linkind_P, d)
             prob = real(scalar(tracer * Pn))
         end
         pdisc += prob
-        (r < pdisc) && break
+        (random_number < pdisc) && break
         n += 1
     end
     return n, prob, Pn
 end
 
+function dumb_identity(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
+    #return ψ
+    llim, rlim = Zygote.@ignore ψ.llim, ψ.rlim
+    return MPS(ψ.data[:], llim, rlim)
+end
+
+function dumb_identity(ψ::MPO; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
+    ψ_tensors_2 = ITensor[]
+    for i in 1:length(ψ)
+        ψ_tensors_2 = vcat(ψ_tensors_2, [ψ[i]])
+    end
+    return MPO(ψ_tensors_2)
+end
+
 function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
+    # First sample the qubits and the apply the projectors seperately
+    local N, result, P, projectors
+
+    # In P we store the contracted left hand side of the tensor network
+    # Diagramm:
+    # P = O---O---O--
+    #     |   |   |
+    #     O---O---O--
+
+    
+    Zygote.@ignore begin 
+        projectors = ITensor[]
+
+        ψo = orthogonalize(ψ, 1)
+        N = length(ψ)
+        
+        if ITensors.orthocenter(ψo) != 1
+            error("sample: MPS ψ must have orthocenter(ψ)==1 and not $(ITensors.orthocenter(ψo))")
+        end
+        
+        if reset === nothing || reset isa Int
+            reset = fill(reset, length(indices))
+        end
+    
+        #TODO: Check that the qubits are in the right order
+
+        n = norm(ψo[1])
+        if abs(1.0 - n) < norm_treshold
+            ψo[1] *= (1.0 / n)
+        else
+            error("sample: MPS is not normalized, norm=$(n), $(abs(1.0 - n)))> $norm_treshold")
+        end
+
+        result = zeros(Int, length(indices))
+    
+        i = 1
+        for j in 1:N
+
+            local prob, projn, ψj
+            s = siteind(ψo, j)
+            d = dim(s)
+
+            if j in indices
+                # Measure the qubit
+                Zygote.@ignore begin
+                    if j == 1
+                        # Diagramm P:
+                        #     O--
+                        #     |
+                        #     O
+                        #
+                        #     O
+                        #     |
+                        #     O--
+                        result[i], prob, An = sample_and_probs_mps(ψo[1], s, d)
+                        P = An * prime(dag(An))
+                        P *= (1. / prob)
+                    else
+                        # Diagramm P * ψj * ψj':
+                        #              O-- --O-- ψj
+                        #              O     |
+                        #              O     O proj
+                        #            P O      
+                        #              O     O proj
+                        #              O     |
+                        #              O-- --O-- ψj'
+
+                        linkind_P = linkind(ψo, j)
+                        result[i], prob, P = sample_and_probs_mps2(P, ψo[j], s, linkind_P, d)
+                        P *= (1. / prob)
+                    end
+                end
+
+                # Get the projector
+                projn = Zygote.@ignore projective_measurement_gate_sample(s, result[i], prob; reset=reset[i])
+                push!(projectors, projn)
+                # Apply the projector
+                # = noprime(ψo[j] * projn)
+
+                i += 1
+            else
+                # No measurement
+                #ψj = ψ[j]
+
+                Zygote.@ignore begin
+                    if j == 1
+                        # Diagramm P:
+                        #     O-- ψj
+                        #     |
+                        #     O-- ψj'
+                        linkind_P = linkind(ψo, j)
+                        P = ψo[1] * prime(dag(ψo[1]), linkind_P)
+                    elseif j < N
+                        # Diagramm P * ψj * ψj':
+                        #              O-- --O-- ψj
+                        #            P O     | 
+                        #              O-- --O-- ψj'
+                        linkind_P = linkind(ψo, j)
+                        linkind2_P = linkind(ψo, j-1)
+                        P = P * ψo[j] * prime(dag(ψo[j]), linkind_P, linkind2_P)
+                    end
+                end
+            end
+
+            # Sanity Check
+            #=
+            if j < N
+                linkind_P = linkind(ψ, j)
+                tracer = delta(linkind_P, prime(linkind_P))
+                prob = real(scalar(tracer * P))
+                @assert abs(1.0 - prob) < 1e-8
+            end
+            =#
+
+        end
+    end
+
+    ψ_new = apply(projectors, ψ)
+    if remove_measured
+        return reduce_MPS(ψ_new, indices, result), result
+    else
+        return ψ_new, result
+    end
+end
+
+function projective_measurement_sample2(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
+    # Orthocenter is at the end of the MPS so we need to sample from the end
+    local result, P, random_numbers, norm_
+
+    # In P we store the contracted left hand side of the tensor network
+    # Diagramm:
+    # P = O---O---O--
+    #     |   |   |
+    #     O---O---O--
+
+    N = length(ψ)
+
+    # Lazy way to orthogonalize the MPS
+    ψ = runcircuit(ψ, [(("Id", N))])
+    
+    Zygote.@ignore begin 
+        println("a4")
+        if ITensors.orthocenter(ψ) != length(ψ)
+            error("sample: MPS ψ must have orthocenter(ψ)==$(length(ψ)) and not $(ITensors.orthocenter(ψ))")
+        end
+        
+        if reset === nothing || reset isa Int
+            reset = fill(reset, length(indices))
+        end
+    
+        #TODO: Check that the qubits are in the right order
+
+        
+
+        result = zeros(Int, length(indices))
+        random_numbers = rand(length(indices))
+    end
+
+    norm_ = norm(ψ[end])
+    if abs(1.0 - norm_) < norm_treshold
+        # Normalize the MPS later
+    else
+        error("sample: MPS is not normalized, norm=$(norm_), $(abs(1.0 - norm_)))> $norm_treshold")
+    end
+    
+    ψ_tensors = ITensor[]
+    
+    i = length(indices)
+    for j in N:-1:1
+        
+        local prob, projn, ψj
+
+        s = siteind(ψ, j)
+        d = dim(s)
+        ψj = ψ[j]
+        if j == N
+            ψj = ψj * (1/norm_)
+        end
+
+        if j in indices
+            # Measure the qubit j
+            
+            Zygote.@ignore begin
+                
+                if j == N
+                    # Diagramm P:
+                    #     O--
+                    #     |
+                    #     O
+                    #
+                    #     O
+                    #     |
+                    #     O--
+                    result[i], prob, An = sample_and_probs_mps(ψj, s, d; random_number=random_numbers[i])
+                    P = An * prime(dag(An))
+                    P *= (1. / prob)
+                else
+                    # Diagramm P * ψj * ψj':
+                    #              O-- --O-- ψj
+                    #              O     |
+                    #              O     O proj
+                    #            P O      
+                    #              O     O proj
+                    #              O     |
+                    #              O-- --O-- ψj'
+
+                    linkind_P = linkind(ψ, j-1)
+                    result[i], prob, P = sample_and_probs_mps2(P, ψj, s, linkind_P, d; random_number=random_numbers[i])
+                    P *= (1. / prob)
+                end
+            end
+            
+
+            # Get the projector
+            projn = Zygote.@ignore projective_measurement_gate_sample(s, result[i], prob; reset=reset[i])
+            
+            # Apply the projector
+            ψj = noprime(ψj * projn)
+
+            i -= 1
+        else
+            # No measurement
+            Zygote.@ignore begin
+                if j == N
+                    # Diagramm P:
+                    #     O-- ψj
+                    #     |
+                    #     O-- ψj'
+                    linkind_P = linkind(ψ, j-1)
+                    P = ψj * prime(dag(ψj), linkind_P)
+                elseif j > 1
+                    # Diagramm P * ψj * ψj':
+                    #              O-- --O-- ψj
+                    #            P O     | 
+                    #              O-- --O-- ψj'
+                    linkind_P = linkind(ψ, j)
+                    linkind2_P = linkind(ψ, j-1)
+                    P = P * ψj * prime(dag(ψj), linkind_P, linkind2_P)
+                end
+            end
+        end
+        
+        # Sanity Check
+        #=
+        if j < N
+            linkind_P = linkind(ψ, j)
+            tracer = delta(linkind_P, prime(linkind_P))
+            prob = real(scalar(tracer * P))
+            @assert abs(1.0 - prob) < 1e-8
+        end
+        =#
+        ψ_tensors = vcat(ψ_tensors, ψj)
+
+    end
+
+    ψ_new = MPS(ψ_tensors[end:-1:1])
+
+    if remove_measured
+        return reduce_MPS(ψ_new, indices, result), result
+    else
+        return ψ_new, result
+    end
+end
+
+function projective_measurement_sample!(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
     #println("Warning: projective_measurement_sample needs to be validated")
     local N, result, P
 
@@ -66,12 +351,13 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
     #     |   |   |
     #     O---O---O--
 
+    #return dumb_identity(ψ), nothing
+    #ψ = orthogonalize_grad(ψ, 1)
     Zygote.@ignore begin 
         N = length(ψ)
-
         orthogonalize!(ψ, 1)
-        if ITensors.orthocenter(ψ) != 1
-            error("sample: MPS ψ must have orthocenter(ψ)==1")
+        if ITensors.orthocenter(ψ) != 12
+            error("sample: MPS ψ must have orthocenter(ψ)==1 and not $(ITensors.orthocenter(ψ))")
         end
         
         if reset === nothing || reset isa Int
@@ -90,6 +376,8 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
         result = zeros(Int, length(indices))
 
     end
+
+    ψ = graderror(ψ; error_message="projective_measurement_sample! can not be differentiated")
     
     ψ_tensors = ITensor[]
     
@@ -176,6 +464,7 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
         ψ_tensors = vcat(ψ_tensors, ψj)
 
     end
+
     ψ_new = MPS(ψ_tensors)
     if remove_measured
         return reduce_MPS(ψ_new, indices, result), result
@@ -183,6 +472,7 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
         return ψ_new, result
     end
 end
+
 """
 Projects the MPS ψ onto the state |n⟩, where n is a vector of integers. Eliminates the qubits that are measured.
 """
@@ -266,9 +556,11 @@ function projective_measurement_sample(ρ::MPO; indices=1:length(ρ), reset=noth
         for n in reverse(1:(N - 1))
             R[n] = ρ[n] * δ(dag(s[n])) * R[n + 1]
         end
+
+        norm_ = R[1][]
         if abs(1.0 - R[1][]) < norm_treshold
-            R = R / R[1][]
-            ρ[1] = ρ[1] / R[1][]
+            R = R / norm_
+            ρ[1] = ρ[1] / norm_
         else
             error("sample: MPO is not normalized, norm=$(tr(ρ)), $(abs(1.0 - R[1][]))> $norm_treshold")
         end
@@ -336,11 +628,12 @@ function projective_measurement_sample(ρ::MPO; indices=1:length(ρ), reset=noth
     return MPO(ρ_tensors), result
 end
 
-function projective_measurement_sample2(ρ::MPO; indices=1:length(ρ), reset=nothing)
+function projective_measurement_sample2(ρ::MPO; indices=1:length(ρ), reset=nothing, norm_treshold=0.9)
     gates = Vector{ITensor}(undef, length(indices))
     result = Vector{Int}(undef, length(indices))
 
     Zygote.ignore() do
+        println("ss")
         N = length(ρ)
         s = siteinds(ρ)
         R = Vector{ITensor}(undef, N)
@@ -551,22 +844,80 @@ function projective_measurement(ρs::Vector{MPO}; kwargs...)
     return ρs_out
 end
 
+using ITensors: AbstractMPS
+function orthogonalize_grad(M::AbstractMPS, j::Int; kwargs...)
+    llim = M.llim
+    rlim = M.rlim
+    M_O = M
+    M = Zygote.bufferfrom(M[:])
+    
+    if !(1 <= j <= length(M))
+      error("Input j=$j to `orthogonalize!` out of range (valid range = 1:$(length(M)))")
+    end
+    
+    
+    while llim < (j - 1)
+        if llim < 0
+            llim = 0
+        end
+        b = llim + 1
+        linds = uniqueinds(M[b], M[b + 1])
+        lb = linkind(M_O, b)
+        if !isnothing(lb)
+          ltags = tags(lb)
+        else
+            ltags = TagSet("Link,l=$b")
+        end
+        L, R = ITensors.factorize(M[b], linds; tags=ltags, kwargs...)
+        M[b] = L
+        M[b + 1] *= R
+        llim = b
+        if rlim < llim + 2
+           rlim = llim + 2
+        end
+    end
+
+    N = length(M)
+
+    while rlim > (j + 1)
+        if rlim > (N + 1)
+            rlim = N + 1
+        end
+        b = rlim - 2
+        rinds = uniqueinds(M[b + 1], M[b])
+        lb = linkind(M_O, b)
+        if !isnothing(lb)
+            ltags = tags(lb)
+        else
+            ltags = TagSet("Link,l=$b")
+        end
+        L, R = factorize(M[b + 1], rinds; tags=ltags, kwargs...)
+        M[b + 1] = L
+        M[b] *= R
+
+        rlim = b + 1
+        if llim > rlim - 2
+            llim = rlim - 2
+        end
+    end
+    return MPS(copy(M), llim, rlim)
+end
+
 
 # Custom @adoints for Zygote
-function Base.convert(ty::Type{MPO}, x::Zygote.Tangent)
-    return MPO(x.data, x.llim, x.rlim)
+function Base.convert(::Type{T}, x::Zygote.Tangent) where {T <: ITensors.AbstractMPS}
+    return T(x.data, x.llim, x.rlim)
 end
 
-function Base.convert(ty::Type{MPS}, x::Zygote.Tangent)
-    return MPS(x.data, x.llim, x.rlim)
-end
-
-function Base.convert(ty::Type{Vector{ITensor}}, x::States)
+function Base.convert(::Type{Vector{ITensor}}, x::States)
     return x.data
 end
 
-@Zygote.adjoint MPO(data::Vector{ITensor}, llim::Int, rlim::Int) = MPO(data, llim, rlim), c̄ -> (MPO(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
-@Zygote.adjoint MPO(data::Vector{ITensor}; ortho_lims::UnitRange=1:length(data)) = MPO(data; ortho_lims), c̄ -> (MPO(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
+@Zygote.adjoint ITensors.MPO(data::Vector{ITensor}, llim::Int, rlim::Int) = MPO(data, llim, rlim), c̄ -> (MPO(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
+@Zygote.adjoint ITensors.MPO(data::Vector{ITensor}; ortho_lims::UnitRange=1:length(data)) = MPO(data; ortho_lims), c̄ -> (MPO(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
+
+@Zygote.adjoint ITensors.MPS(data::Vector{ITensor}, llim::Int, rlim::Int) = MPS(data, llim, rlim), c̄ -> (MPS(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
+@Zygote.adjoint ITensors.MPS(data::Vector{ITensor}; ortho_lims::UnitRange=1:length(data)) = MPS(data; ortho_lims), c̄ -> (MPS(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
 
 
 
