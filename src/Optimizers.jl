@@ -119,6 +119,8 @@ end
 import Base.*
 import Base./
 import Base.+
+import Base.-
+
 
 function LinearAlgebra.rmul!(gs::Zygote.Grads, α::Number)
     for vi in gs.params
@@ -185,6 +187,34 @@ function +(grads1::Zygote.Grads, grads2::Zygote.Grads) # This is the one that is
     return out
 end
 
+function -(grads1::Zygote.Grads, grads2::Zygote.Grads) # This is the one that is used, fix so that it works with Distributed
+    @assert grads1.params == grads2.params "The gradients do not have the same parameters"
+    out = copy(grads1)
+    for i in 1:length(out.params)
+        @assert out.params[i] == grads1.params[i] == grads2.params[i] "The gradients do not have the same parameters"
+        out.grads[out.params[i]] = grads1[grads1.params[i]] .- grads2[grads2.params[i]]
+    end
+    return out
+end
+
+function *(grads1::Zygote.Grads, grads2::Zygote.Grads) # This is the one that is used, fix so that it works with Distributed
+    @assert grads1.params == grads2.params "The gradients do not have the same parameters"
+    out = copy(grads1)
+    for i in 1:length(out.params)
+        @assert out.params[i] == grads1.params[i] == grads2.params[i] "The gradients do not have the same parameters"
+        out.grads[out.params[i]] = grads1[grads1.params[i]] .* grads2[grads2.params[i]]
+    end
+    return out
+end
+
+function Base.sqrt(grads::Zygote.Grads)
+    grads2 = copy(grads)
+    for p in grads.params
+        grads2[p] = sqrt.(deepcopy(grads[p]))
+    end
+    return grads2
+end
+
 function Base.deepcopy(grads::Zygote.Grads)
     grads = copy(grads)
     for p in grads.params
@@ -192,5 +222,7 @@ function Base.deepcopy(grads::Zygote.Grads)
     end
     return grads
 end
+
+
 
 end # module
