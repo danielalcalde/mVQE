@@ -92,13 +92,29 @@ function loss_and_grad(ψs::States, H::MPOTypes, model::AbstractVariationalCircu
     return [y, ∇]
 end
 
-function loss_and_grad(ψs::States, H::MPOTypes, model::AbstractVariationalCircuit, samples::Int; kwargs...)
-    g = loss_and_grad(ψs, H, model; kwargs...)
-    for _ in 1:samples - 1
-        g += loss_and_grad(ψs, H, model; kwargs...)
-    end
-    return g / samples
+function loss_and_grad(ψs::States, H::MPOTypes, model::AbstractVariationalCircuit, samples::Int; compute_std=false, kwargs...)
+    losses_and_grads = [loss_and_grad(ψs, H, model; kwargs...) for _ in 1:samples]
 
+    if compute_std
+        losses = [losses_and_grads[i][1] for i in 1:samples]
+        grads = [losses_and_grads[i][2] for i in 1:samples]
+
+        mean_grad = grads[1]
+        var_grad = grads[1] * grads[1]
+        for grad in grads[2:end]
+            mean_grad += grad
+            var_grad += grad * grad
+        end
+        mean_grad /= samples
+        var_grad /= samples
+        std_grad = sqrt(var_grad - mean_grad * mean_grad)
+
+    
+        return mean(losses), std(losses) / sqrt(samples), mean_grad, std_grad
+    else
+        
+        return mean(losses_and_grads[i][1] for i in 1:samples), mean(losses_and_grads[i][2] for i in 1:samples)
+    end
 end
 
 function get_loss_and_grad_threaded(ψs, H::MPOTypes; samples::Int=1, kwargs...)
@@ -133,7 +149,7 @@ end
 
 function get_loss_and_grad_distributed(ψs, H::MPOTypes; samples::Int=1, fix_seed=false, kwargs...)
     #nthreads = length(workers())
-            
+
     @everywhere @eval Main begin
         using mVQE: loss_and_grad, AbstractVariationalCircuit
         using Random
@@ -142,7 +158,56 @@ function get_loss_and_grad_distributed(ψs, H::MPOTypes; samples::Int=1, fix_see
     sendto(workers(), ψs=ψs, H=H, samples=samples, kwargs=kwargs, secret=my_secret)
     @everywhere @eval Main begin
         function loss_and_grad_with_args(model::AbstractVariationalCircuit)
-            return loss_and_grad(ψs, H, model; kwargs...) / samples
+            return loss_and_grad(ψs, H, model; kwargs...)
+        end
+    end
+    local fixed_seed
+    if fix_seed
+        fixed_seed = rand(UInt)
+    end
+    function loss_and_grad_distributed(model::AbstractVariationalCircuit; get_list=false)
+        if fix_seed
+            seed = fixed_seed
+        else
+            seed = rand(UInt)
+        end
+        
+        if get_list
+            op = vcat
+        else
+            op = +
+        end
+
+        out = @distributed (op) for i = 1:samples
+            @assert Main.secret == my_secret "The secret does not match, this might happen if get_loss_and_grad_distributed is called twice."
+            Random.seed!(seed + i)
+            Main.loss_and_grad_with_args(model)
+        end
+        
+        if get_list
+            out = reshape(out, 2, samples)
+            l = out[1, :]
+            grads = [fix_grads(grad, model) for grad in out[2, :]]
+        else
+            l, grads = out[1]/ samples, fix_grads(out[2], model)/ samples
+        end
+
+        return l, grads
+    end
+    return loss_and_grad_distributed
+end
+
+function get_loss_distributed(ψs, H::MPOTypes; samples::Int=1, fix_seed=false, kwargs...)
+            
+    @everywhere @eval Main begin
+        using mVQE: loss, AbstractVariationalCircuit
+        using Random
+    end
+    my_secret = Random.randstring(100)
+    sendto(workers(), ψs=ψs, H=H, samples=samples, kwargs=kwargs, loss_secret=my_secret)
+    @everywhere @eval Main begin
+        function loss_with_args(model::AbstractVariationalCircuit)
+            return loss(ψs, H, model; kwargs...) / samples
         end
     end
     local fixed_seed
@@ -150,31 +215,24 @@ function get_loss_and_grad_distributed(ψs, H::MPOTypes; samples::Int=1, fix_see
         fixed_seed = rand(UInt)
     end
 
-    function loss_and_grad_distributed(model::AbstractVariationalCircuit)
+    function loss_distributed(model::AbstractVariationalCircuit)
         if fix_seed
             seed = fixed_seed
         else
             seed = rand(UInt)
         end
 
-        l, grads = @distributed (+) for i = 1:samples
-            @assert Main.secret == my_secret "The secret does not match, this might happen if get_loss_and_grad_distributed is called twice."
+        l = @distributed (+) for i = 1:samples
+            @assert Main.loss_secret == my_secret "The secret does not match, this might happen if get_loss_and_grad_distributed is called twice."
             Random.seed!(seed + i)
-            Main.loss_and_grad_with_args(model)
+            Main.loss_with_args(model)
         end
-        return l, fix_grads(grads, model)
+        return l
     end
-    return loss_and_grad_distributed
+    return loss_distributed
 end
 
-
-# Optimize with gradient descent
-function optimize_and_evolve(ψs::States, H::MPOTypes, model::AbstractVariationalCircuit;
-                             optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false,
-                             threaded=false, callback=callback_,
-                             fix_seed=false, kwargs_optim=Dict(),
-                             kwargs...)
-    
+function get_loss_and_grad(ψs, H::MPOTypes; samples::Int=1, parallel=false, fix_seed=false, threaded=false, kwargs...)
     local loss_and_grad_local
     
     if parallel && samples > 1
@@ -199,7 +257,24 @@ function optimize_and_evolve(ψs::States, H::MPOTypes, model::AbstractVariationa
         end
         loss_and_grad_local = loss_and_grad_serial
     end
-    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad_local, model, optimizer, callback; kwargs_optim...)
+    return loss_and_grad_local
+end
+
+
+
+# Optimize with gradient descent
+function optimize_and_evolve(ψs::States, H::MPOTypes, model::AbstractVariationalCircuit;
+                             optimizer=LBFGS(; maxiter=50), samples::Int=1, parallel=false,
+                             threaded=false, callback=callback_,
+                             fix_seed=false, kwargs_optim=Dict(),
+                             loss_and_grad=nothing,
+                             kwargs...)
+    
+    if loss_and_grad === nothing
+        loss_and_grad = get_loss_and_grad(ψs, H; samples, parallel, fix_seed, threaded, kwargs...)
+    end
+
+    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad, model, optimizer, callback; kwargs_optim...)
     
     misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
 
