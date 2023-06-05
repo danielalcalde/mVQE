@@ -62,20 +62,6 @@ function sample_and_probs_mps2(P::ITensor, ψi::ITensor, s, linkind_P, d; random
     return n, prob, Pn
 end
 
-function dumb_identity(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
-    #return ψ
-    llim, rlim = Zygote.@ignore ψ.llim, ψ.rlim
-    return MPS(ψ.data[:], llim, rlim)
-end
-
-function dumb_identity(ψ::MPO; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
-    ψ_tensors_2 = ITensor[]
-    for i in 1:length(ψ)
-        ψ_tensors_2 = vcat(ψ_tensors_2, [ψ[i]])
-    end
-    return MPO(ψ_tensors_2)
-end
-
 function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9)
     # First sample the qubits and the apply the projectors seperately
     local N, result, P, projectors
@@ -115,7 +101,7 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
         i = 1
         for j in 1:N
 
-            local prob, projn, ψj
+            local prob, projn
             s = siteind(ψo, j)
             d = dim(s)
 
@@ -351,7 +337,6 @@ function projective_measurement_sample!(ψ::MPS; indices=1:length(ψ), reset=not
     #     |   |   |
     #     O---O---O--
 
-    #return dumb_identity(ψ), nothing
     #ψ = orthogonalize_grad(ψ, 1)
     Zygote.@ignore begin 
         N = length(ψ)
@@ -774,6 +759,30 @@ function tr(ρ::MPO, indices)
     end
 
     return MPO(ρ_tensors)
+end
+
+function add_identities(H::MPO, hilbert, sites)
+    @assert length(hilbert) == length(sites)
+    H = H[:]
+    
+    for (index, site) in zip(hilbert, sites)
+        local new_H
+        
+        if site == 1 || site > length(H)
+            new_H = δ(index, index')
+        else
+            link_original = commonind(H[site-1], H[site])
+            link_new = Index(dim(link_original); tags="Link,n=e$site")
+            H[site] = H[site] * δ(link_original, link_new)
+
+            new_H = δ(link_original, link_new) * δ(index, index')
+        end
+            
+            
+        insert!(H, site, new_H)
+    end
+    return MPO(H)
+    
 end
 
 function projective_measurement(ρ::MPO; indices=1:length(ρ), reset=nothing)
