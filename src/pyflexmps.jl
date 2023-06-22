@@ -49,7 +49,7 @@ function substitute_couplings(factor, couplings, site_i)
     return factor
 end
 
-function add_sympy_to_opsum!(opsum, op, sites::Vector{Int}; couplings=Dict(), sublattice=1:sites[end]+100, site_type="Qubit")
+function add_sympy_to_opsum!(opsum, op, sites::Vector{<:Integer}; couplings=Dict(), sublattice=1:sites[end]+100, site_type="Qubit")
     if op.__class__ == sympy.core.add.Add
         for opi in op.args
             opsum = add_sympy_to_opsum!(opsum, opi, sites; couplings=couplings, sublattice=sublattice, site_type=site_type)
@@ -84,12 +84,12 @@ function add_sympy_to_opsum!(opsum, op, sites::Vector{Int}; couplings=Dict(), su
 end
 
 
-function convert_sympy_to_opsum(sympy_ham, sites::Vector{Int}; kwargs...)
+function convert_sympy_to_opsum(sympy_ham, sites::Vector{<:Integer}; kwargs...)
     sympy_ham = pfs.apply(expand(sympy_ham))
     return add_sympy_to_opsum!(OpSum(), sympy_ham, sites; kwargs...)
 end
 
-function convert_sympy_to_opsums(sympy_ham, sites::Vector{Int}; kwargs...)
+function convert_sympy_to_opsums(sympy_ham, sites::Vector{<:Integer}; kwargs...)
     sympy_ham = pfs.apply(expand(sympy_ham))
     return [add_sympy_to_opsum!(OpSum(), sympy_ham, [site]; kwargs...) for site in sites]
 end

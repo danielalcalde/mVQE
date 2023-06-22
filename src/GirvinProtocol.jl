@@ -151,7 +151,7 @@ function (t::GirvinCorrectionNetwork)(M::Vector{T}) where T <: Integer
 end
 end
 
-function GirvinMCFeedback(N_state::Int, ancilla_indices::Vector{Int})
+function GirvinMCFeedback(N_state::Int, ancilla_indices::Vector{<:Integer})
     vmodels = [GirvinCircuitIdeal(N_state), GirvinCorrCircuit(Int(N_state/2))]
     dense(x, y) = GirvinCorrectionNetwork()
     model = VariationalMeasurementMCFeedback(vmodels, [dense], ancilla_indices)

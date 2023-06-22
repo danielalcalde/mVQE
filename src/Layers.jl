@@ -1,8 +1,8 @@
 module Layers
 
-Rzlayer(θ) = [("Rz", i, (θ = θi,)) for (i, θi) in enumerate(θ)]
-Rylayer(θ) = [("Ry", i, (θ = θi,)) for (i, θi) in enumerate(θ)]
-Rxlayer(θ) = [("Rx", i, (θ = θi,)) for (i, θi) in enumerate(θ)]
+Rzlayer(θ; offset=0) = [("Rz", i + offset, (θ = θi,)) for (i, θi) in enumerate(θ)]
+Rylayer(θ; offset=0) = [("Ry", i + offset, (θ = θi,)) for (i, θi) in enumerate(θ)]
+Rxlayer(θ; offset=0) = [("Rx", i + offset, (θ = θi,)) for (i, θi) in enumerate(θ)]
 Ulayer(θ) = [("U", i, (θ = θ[i, :],)) for i in 1:size(θ, 1)]
 
 # brick-layer of CRX gates

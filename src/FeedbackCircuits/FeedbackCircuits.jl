@@ -32,7 +32,7 @@ end
 
 struct VariationalMeasurementMCFeedback <: AbstractVariationalMeasurementCircuit
     vcircuits:: Vector{AbstractVariationalCircuit}
-    measurement_indices:: Vector{Int}
+    measurement_indices:: Vector{<:Integer}
     reset:: Int
 end
 Flux.@functor VariationalMeasurementMCFeedback
@@ -66,7 +66,7 @@ measurement_indices = [1, 2]
 model = VariationalMeasurementMCFeedback(vcircuits, feedback_models, measurement_indices)
 ```
 """
-function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models::Vector, measurement_indices:: Vector{Int}; reset:: Int=1) where T <: AbstractVariationalCircuit
+function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models::Vector, measurement_indices:: Vector{<:Integer}; reset:: Int=1) where T <: AbstractVariationalCircuit
     # Initialize feedback models
     N_measurements = length(measurement_indices)
     @assert length(feedback_models) == length(vcircuits) - 1

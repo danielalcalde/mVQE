@@ -11,7 +11,8 @@ import Base
 
 using ITensors: AbstractMPS
 
-using ..ITensorsExtension: VectorAbstractMPS, States, projective_measurement, projective_measurement_sample
+using ..ITensorsExtension: VectorAbstractMPS, States
+using ..ITensorsMeasurement: projective_measurement, projective_measurement_sample
 using ..Layers: Rxlayer, Rylayer, Rzlayer, CXlayer, CRxlayer
 using ..Layers: ProjectiveMeasurementLayer
 
@@ -34,6 +35,8 @@ end
 function get_N(model::AbstractVariationalCircuit)
     throw("get_N not defined for $(typeof(model))")
 end
+
+Flux.trainable(model::AbstractVariationalCircuit) = (model.params,)
 
 Base.show(io::IO, c::AbstractVariationalCircuit) = print(io, "$(typeof(c))(N=$(get_N(c)), depth=$(get_depth(c)))")
 
@@ -86,9 +89,10 @@ end
 # Variational circuit with Ry gates
 struct VariationalCircuitRy <: AbstractVariationalCircuit
     params::Matrix{Float64}
-    VariationalCircuitRy(params::Matrix{Float64}) = new(params)
-    VariationalCircuitRy(N::Int, depth::Int) = new(2π .* rand(N, depth))
-    VariationalCircuitRy() = new(Matrix{Float64}(undef, 0, 0)) # Empty circuit to be used as a placeholder
+    order::Bool
+    VariationalCircuitRy(params::Matrix{Float64}, order=false) = new(params, order)
+    VariationalCircuitRy(N::Int, depth::Int; order=false) = new(2π .* rand(N, depth), order)
+    VariationalCircuitRy() = new(Matrix{Float64}(undef, 0, 0), false) # Empty circuit to be used as a placeholder
 end
 Flux.@functor VariationalCircuitRy
 Base.size(model::VariationalCircuitRy) = size(model.params)
@@ -97,11 +101,174 @@ get_depth(model::VariationalCircuitRy) = size(model.params, 2)
 get_N(model::VariationalCircuitRy) = size(model.params, 1)
 
 
-function generate_circuit!(circuit, ::VariationalCircuitRy; params=nothing, N::Integer, depth::Integer)
-    for d in 1:depth
-        circuit = vcat(circuit, CXlayer(N, d))
-        circuit = vcat(circuit, Rylayer(params[:, d]))
+function generate_circuit!(circuit, model::VariationalCircuitRy; params=nothing, N::Integer, depth::Integer)
+    if model.order
+        for d in 1:depth-1
+            circuit = vcat(circuit, Rylayer(params[:, d]))
+            circuit = vcat(circuit, CXlayer(N, d+1))
+        end
+
+        circuit = vcat(circuit, Rylayer(params[:, depth]))
+    else
+        for d in 1:depth
+            circuit = vcat(circuit, CXlayer(N, d))
+            circuit = vcat(circuit, Rylayer(params[:, d]))
+        end
     end
+
+    
+    return circuit
+end
+
+VecVec = Vector{Vector{Float64}}
+# Variational circuit with Ry gates
+struct VariationalCircuitCorrRy <: AbstractVariationalCircuit
+    params::Tuple
+    odd::Bool
+    VariationalCircuitCorrRy(params::Tuple, odd::Bool) = new(params, odd)
+    VariationalCircuitCorrRy(params::Tuple; odd::Bool=false) = new(params, odd)
+    VariationalCircuitCorrRy() = new(Matrix{Float64}(undef, 0, 0)) # Empty circuit to be used as a placeholder
+end
+Flux.@functor VariationalCircuitCorrRy
+Base.size(model::VariationalCircuitCorrRy) = size(model.params)
+get_depth(model::VariationalCircuitCorrRy) = size(model.params, 1)
+get_N(model::VariationalCircuitCorrRy) = size(model.params[1], 1) + model.odd
+
+
+function VariationalCircuitCorrRy(N::Integer, depth::Integer)
+    params = Vector{Float64}[]
+    if iseven(N)
+        for i in 1:depth
+            if iseven(i)
+                push!(params, 2π .* rand(N-2))
+            else
+                push!(params, 2π .* rand(N))
+            end
+        end
+        #push!(params, 2π .* rand(N)) # Last layer is complete
+    else
+        @assert false "odd circuits are not implemented correctly"
+        for i in 1:depth
+            push!(params, 2π .* rand(N-1))
+        end
+    end
+    return VariationalCircuitCorrRy(Tuple(params), isodd(N))
+end
+
+function VariationalCircuitCorrRy(m::VariationalCircuitRy)
+    
+    params = Vector{Float64}[]
+    N = get_N(m)
+    depth = get_depth(m)
+    for i in 1:depth
+        if iseven(i)
+            push!(params, m.params[2:N-1, i])
+        else
+            p = copy(m.params[:, i])
+            if i != depth
+                p[1] += m.params[1, i+1]
+                p[end] += m.params[end, i+1]
+            end
+            push!(params, p)
+        end
+    end
+    
+    return VariationalCircuitCorrRy(Tuple(params))
+end
+
+function generate_circuit!(circuit, model::VariationalCircuitCorrRy; params=nothing, N::Integer, depth::Integer)
+    if iseven(N)
+        circuit = generate_circuit_even!(circuit, model; params, N, depth)
+    else
+        circuit = generate_circuit_odd!(circuit, model; params, N, depth)
+    end
+    return circuit
+end
+
+
+function generate_circuit_odd!(circuit, ::VariationalCircuitCorrRy; params=nothing, N::Integer, depth::Integer)
+    # Throw not implemented errror
+    @assert false "odd circuits are not implemented correctly"
+
+    for d in 1:depth
+        if iseven(d)
+            @assert length(params[d]) == N-1 "Number of parameters must match number of qubits"
+            circuit = vcat(circuit, Rylayer(params[d]))
+        else
+            @assert length(params[d]) == N-1 "Number of parameters must match number of qubits"
+            circuit = vcat(circuit, Rylayer(params[d]; offset=1))
+        end
+    end
+    return circuit
+end
+
+function generate_circuit_even!(circuit, ::VariationalCircuitCorrRy; params=nothing, N::Integer, depth::Integer)
+    
+    for d in 1:depth - 1
+        if iseven(d)
+            @assert length(params[d]) == N-2 "Number of parameters must match number of qubits"
+            circuit = vcat(circuit, Rylayer(params[d]; offset=1))
+        else
+            @assert length(params[d]) == N "Number of parameters must match number of qubits"
+            circuit = vcat(circuit, Rylayer(params[d]))
+        end
+        circuit = vcat(circuit, CXlayer(N, d+1))
+    end
+    if iseven(depth)
+        circuit = vcat(circuit, Rylayer(params[depth]; offset=1))
+    else
+        circuit = vcat(circuit, Rylayer(params[depth]))
+    end
+
+    return circuit
+end
+
+
+
+# Variational circuit with Ry gates
+struct VariationalCircuitSymRy <: AbstractVariationalCircuit
+    params::Matrix{Float64}
+    VariationalCircuitSymRy(params::Matrix{Float64}) = new(params)
+    VariationalCircuitSymRy() = new(Matrix{Float64}(undef, 0, 0)) # Empty circuit to be used as a placeholder
+end
+Flux.@functor VariationalCircuitSymRy
+
+Base.size(model::VariationalCircuitSymRy) = size(model.params)
+Base.size(model::VariationalCircuitSymRy, i::Int) = size(model.params, i)
+get_depth(model::VariationalCircuitSymRy) = size(model.params, 2) - 1
+get_N(model::VariationalCircuitSymRy) = size(model.params, 1)
+
+
+function VariationalCircuitSymRy(N::Integer, depth::Integer)
+    @assert depth % 2 == 0 "depth must be even"
+    depth_half = depth ÷ 2
+
+    params_ = 2π .* rand(N, depth_half)
+    params = zeros(N, depth + 1)
+
+    params[:, 1:depth_half] .= params_
+    params[:, depth_half+2:end] .= -params_[:, end:-1:1]
+    params[:, end] .+= pi/2 # Last layer is not symmetric
+    return VariationalCircuitSymRy(params)
+end
+
+function generate_circuit!(circuit, ::VariationalCircuitSymRy; params=nothing, N::Integer, depth::Integer)
+    @assert depth % 2 == 0 "depth must be even"
+    
+    depth_half = depth ÷ 2
+
+    for d in 1:depth_half
+        circuit = vcat(circuit, Rylayer(params[:, d]))
+        circuit = vcat(circuit, CXlayer(N, d))
+    end
+
+    circuit = vcat(circuit, Rylayer(params[:, depth_half+1]))
+
+    for (d1, d2) in zip(depth_half:-1:1, depth_half+2:depth+1)
+        circuit = vcat(circuit, CXlayer(N, d1))
+        circuit = vcat(circuit, Rylayer(params[:, d2]))
+    end
+
     return circuit
 end
 
@@ -116,12 +283,12 @@ get_N(model::AbstractVariationalMeasurementCircuit) = get_N(model.vcircuits[1])
 
 struct VariationalMeasurement <: AbstractVariationalMeasurementCircuit
     vcircuits:: Vector{AbstractVariationalCircuit}
-    measurement_indices:: Vector{Int}
+    measurement_indices:: Vector{<:Integer}
     reset:: Int
 end
 Flux.@functor VariationalMeasurement
 
-VariationalMeasurement(vcircuits::Vector{T}, measurement_indices:: Vector{Int}; reset:: Int=1) where T <: AbstractVariationalCircuit = VariationalMeasurement(vcircuits, measurement_indices, reset)
+VariationalMeasurement(vcircuits::Vector{T}, measurement_indices:: Vector{<:Integer}; reset:: Int=1) where T <: AbstractVariationalCircuit = VariationalMeasurement(vcircuits, measurement_indices, reset)
 
 function generate_circuit(model::VariationalMeasurement; params=nothing)
     @assert params === nothing "VariationalMeasurement does not take parameters"
@@ -136,12 +303,12 @@ end
 
 struct VariationalMeasurementMC <: AbstractVariationalMeasurementCircuit
     vcircuits:: Vector{AbstractVariationalCircuit}
-    measurement_indices:: Vector{Int}
+    measurement_indices:: Vector{<:Integer}
     reset:: Int
 end
 Flux.@functor VariationalMeasurementMC
 
-VariationalMeasurementMC(vcircuits::Vector{T}, measurement_indices:: Vector{Int}; reset:: Int=1) where T <: AbstractVariationalCircuit = VariationalMeasurementMC(vcircuits, measurement_indices, reset)
+VariationalMeasurementMC(vcircuits::Vector{T}, measurement_indices:: Vector{<:Integer}; reset:: Int=1) where T <: AbstractVariationalCircuit = VariationalMeasurementMC(vcircuits, measurement_indices, reset)
 
 function (model::VariationalMeasurementMC)(ρ::States; kwargs...)
     for vcircuit in model.vcircuits
