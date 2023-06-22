@@ -21,6 +21,7 @@ include("Misc.jl")
 include("Hamiltonians.jl")
 
 include("ITensorsExtension.jl")
+include("ITensorsMeasurement/measurement.jl")
 include("MPOExtensions.jl")
 
 include("StateFactory.jl")
@@ -30,7 +31,9 @@ include("Layers.jl")
 include("Circuits.jl")
 include("GirvinProtocol.jl")
 
-using ..ITensorsExtension: VectorAbstractMPS, States, projective_measurement
+
+using ..ITensorsExtension: VectorAbstractMPS, States
+using ..ITensorsMeasurement: projective_measurement, projective_measurement_sample
 using ..MPOExtensions: PartialMPO
 using ..Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
 using ..Optimizers: callback_, optimize
@@ -177,11 +180,11 @@ function get_loss_and_grad_distributed(ψs, H::MPOTypes; samples::Int=1, fix_see
         else
             op = +
         end
-
+        sendto(workers(), model=model)
         out = @distributed (op) for i = 1:samples
             @assert Main.secret == my_secret "The secret does not match, this might happen if get_loss_and_grad_distributed is called twice."
             Random.seed!(seed + i)
-            Main.loss_and_grad_with_args(model)
+            Main.loss_and_grad(Main.ψs, Main.H, Main.model; Main.kwargs...)
         end
         
         if get_list
@@ -281,7 +284,7 @@ function optimize_and_evolve(ψs::States, H::MPOTypes, model::AbstractVariationa
     return loss_v, model_optim, model_optim(ψs; kwargs...), misc
 end
 
-function optimize_and_evolve(k::Int, measurement_indices::Vector{Int}, ρ::States, H::MPOTypes, model::AbstractVariationalCircuit
+function optimize_and_evolve(k::Int, measurement_indices::Vector{<:Integer}, ρ::States, H::MPOTypes, model::AbstractVariationalCircuit
                              ;k_init=1, misc=Vector(undef, k), θs=Vector(undef, k), verbose=false,
                              callback=(; kwargs_...) -> true, finalize! = OptimKit._finalize!,
                              kwargs...)

@@ -2,7 +2,7 @@ module Gates
 
 using PastaQ
 using ITensors
-using ..ITensorsExtension: projective_measurement_gate
+using ..ITensorsMeasurement: projective_measurement_gate
 
 function PastaQ.gate(::GateName"reset", st::SiteType"Qubit", s::Index...; state=nothing)
     return projective_measurement_gate(s...; reset=state)
