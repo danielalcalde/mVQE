@@ -10,8 +10,9 @@ struct OptimizerWrapper
     optimizer::AbstractOptimiser
     maxiter::Int
     gradtol::Real
+    losstol::Real
     verbosity::Int
-    OptimizerWrapper(optimizer; maxiter=50, gradtol=1e-10, verbosity=0) = new(optimizer, maxiter, gradtol, verbosity)
+    OptimizerWrapper(optimizer; maxiter=50, losstol=-10^10, gradtol=1e-10, verbosity=0) = new(optimizer, maxiter, gradtol, losstol, verbosity)
 end
 
 callback_(args...; kwargs...) = nothing
@@ -39,7 +40,8 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper,
         # Finalize
         θ, loss, gradient_ = finalize!(θ, loss, gradient_, niter)
         
-        if hasmethod(Flux.params, (T,))
+        # check if isa vector
+        if hasmethod(Flux.params, (T,)) && ! (θ isa Vector)
             # It is a flux model
             Flux.update!(optimizer.optimizer, Flux.params(θ), gradient_)
             norm_θ = norm(Flux.params(θ))
@@ -62,6 +64,12 @@ function OptimKit.optimize(loss_and_grad, θ::T, optimizer::OptimizerWrapper,
         end
 
         if norm_grad < optimizer.gradtol
+            @info "Gradient tolerance reached"
+            break
+        end
+
+        if loss < optimizer.losstol
+            @info "Loss tolerance reached"
             break
         end
     end
@@ -140,7 +148,9 @@ end
 function /(gs::Zygote.Grads, α::Number)
     gs = copy(gs)
     for vi in gs.params
-        gs[vi] = gs[vi] ./ α
+        if gs[vi] !== nothing
+            gs[vi] = gs[vi] ./ α
+        end
     end
     return gs
 end
