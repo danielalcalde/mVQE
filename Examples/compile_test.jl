@@ -27,7 +27,7 @@ end
 println("import mVQE")
 @time begin
 import mVQE
-using mVQE.ITensorsExtension: projective_measurement
+using mVQE.Measurements: projective_measurement
 using mVQE.StateFactory: random_MPS, infinite_temp_MPO
 using mVQE.Layers: Rylayer, CXlayer, Rxlayer
 using mVQE.Circuits: runcircuit, VariationalCircuitRy, VariationalMeasurement
