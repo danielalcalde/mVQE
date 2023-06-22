@@ -2,7 +2,7 @@
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "b043c8c5e34567ffa68feaa71a5b2574cc77757e"
+project_hash = "a7b7c9c1dcaef2b52f223121a011740936800b87"
 
 [[deps.AbstractFFTs]]
 deps = ["ChainRulesCore", "LinearAlgebra"]
@@ -725,6 +725,12 @@ deps = ["Random", "Requires"]
 git-tree-sha1 = "043da614cc7e95c703498a491e2c21f58a2b8111"
 uuid = "e6cf234a-135c-5ec9-84dd-332b85af5143"
 version = "1.5.3"
+
+[[deps.RandomizedLinAlg]]
+deps = ["LinearAlgebra", "Random", "Test"]
+git-tree-sha1 = "de93780c85c207586369522af7525aa3011b09c3"
+uuid = "0448d7d9-159c-5637-8537-fd72090fea46"
+version = "0.1.0"
 
 [[deps.RealDot]]
 deps = ["LinearAlgebra"]
