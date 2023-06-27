@@ -85,14 +85,46 @@ function generate_circuit(model::VariationalCircuitComposed; params=nothing)
     return circuit
 end
 
+struct VariationalCircuitRx{T <: Number} <: AbstractVariationalCircuit
+    params::Matrix{T}
+    order::Bool
+    VariationalCircuitRx(params::Matrix{T}, order=false) where T <: Number = new{T}(params, order)
+    VariationalCircuitRx(N::Int, depth::Int; order=false, eltype=Float64) = new{eltype}(2π .* rand(N, depth), order)
+    VariationalCircuitRx() = new{Float64}(Matrix{Float64}(undef, 0, 0), false) # Empty circuit to be used as a placeholder
+end
+Flux.@functor VariationalCircuitRx
+Base.size(model::VariationalCircuitRx) = size(model.params)
+Base.size(model::VariationalCircuitRx, i::Int) = size(model.params, i)
+get_depth(model::VariationalCircuitRx) = size(model.params, 2)
+get_N(model::VariationalCircuitRx) = size(model.params, 1)
+
+
+function generate_circuit!(circuit, model::VariationalCircuitRx; params=nothing, N::Integer, depth::Integer)
+    if model.order
+        for d in 1:depth-1
+            circuit = vcat(circuit, Rxlayer(params[:, d]))
+            circuit = vcat(circuit, CXlayer(N, d+1))
+        end
+
+        circuit = vcat(circuit, Rxlayer(params[:, depth]))
+    else
+        for d in 1:depth
+            circuit = vcat(circuit, CXlayer(N, d))
+            circuit = vcat(circuit, Rxlayer(params[:, d]))
+        end
+    end
+
+    
+    return circuit
+end
 
 # Variational circuit with Ry gates
-struct VariationalCircuitRy <: AbstractVariationalCircuit
-    params::Matrix{Float64}
+struct VariationalCircuitRy{T <: Number} <: AbstractVariationalCircuit
+    params::Matrix{T}
     order::Bool
-    VariationalCircuitRy(params::Matrix{Float64}, order=false) = new(params, order)
-    VariationalCircuitRy(N::Int, depth::Int; order=false) = new(2π .* rand(N, depth), order)
-    VariationalCircuitRy() = new(Matrix{Float64}(undef, 0, 0), false) # Empty circuit to be used as a placeholder
+    VariationalCircuitRy(params::Matrix{T}, order=false) where T <: Number = new{T}(params, order)
+    VariationalCircuitRy(N::Int, depth::Int; order=false, eltype=Float64) = new{eltype}(2π .* rand(N, depth), order)
+    VariationalCircuitRy() = new{Float64}(Matrix{Float64}(undef, 0, 0), false) # Empty circuit to be used as a placeholder
 end
 Flux.@functor VariationalCircuitRy
 Base.size(model::VariationalCircuitRy) = size(model.params)

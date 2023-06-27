@@ -63,7 +63,7 @@ Zygote.@adjoint function expect(ψ::MPS, H::MPO; kwargs...)
 end
 
 # Cost function
-loss(ψ::State, H::MPO; kwargs...) = expect(ψ, H; kwargs...)
+loss(ψ::AbstractMPS, H::MPO; kwargs...) = expect(ψ, H; kwargs...)
 
 loss(ψ::States, H::PartialMPO; kwargs...) = real(expect(ψ, H; kwargs...))
 loss(ψ::States, Hs::MPOVectorType; kwargs...) = sum(real(expect(ψ, H; kwargs...)) for H in Hs)
