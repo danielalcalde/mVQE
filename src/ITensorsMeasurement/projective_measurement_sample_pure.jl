@@ -173,28 +173,43 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
         ψ = reduce_MPS(ψ, indices, result)
     end
 
-    if get_projectors
-        if get_loglike
-            return ψ, result, loglike, projectors
-        else
-            return ψ, result, projectors
-        end
-    else
-        if get_loglike
-            return ψ, result, loglike
-        else
-            return ψ, result
-        end
+    
+    out = (ψ, result)
+    if get_loglike
+        out = (out..., loglike)
     end
+
+    if get_projectors
+        out = (out..., projectors)
+    end
+    return out
 end
 
 
 Zygote.@adjoint function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, 
-                                                                        norm_treshold=0.9, get_projectors=false, get_loglike=false)
+                                                                        norm_treshold=0.9, get_projectors=false, get_loglike=false, gradient_averaging=true)
     
+    """
+    |ψₚ>=P(ψ)|ψ> where P is the measurment projector operator.
+    If gradient_averaging=true the derivative is computed |ψₚ>=P|ψ> assuming P tobe constant, this is recomended if you want to average your gradients later as the average will be correct.
+    If gradient_averaging=false the derivative is computed |ψₚ>=P(ψ)|ψ> assuming P to be a function of the parameters of the MPS, this is recomended if you want to use the gradient directly.
+    P(ψ) = |r><M| / sqrt(<ψ|M><M|ψ>)
+    exp(loglike/2) = sqrt(<ψ|M><M|ψ>)
+
+    rrule gradient_averaging=true: <ψ_bar|∂|ψₚ>/∂|ψ> = <ψ_bar|P
+    rrule gradient_averaging=false: <ψ_bar|∂|ψₚ>/∂|ψ> = <ψ_bar|P + <ψ_bar|∂|ψₚ>/∂P * ∂P/∂|ψ>
+    <ψ_bar|∂|ψₚ>/∂P = |ψ_bar><ψ|
+    ∂P/∂|ψ> = -|r><M| / <ψ|M><M|ψ>^(3/2) * |M><M|ψ>
+    with Pₙ(ψ) = |M><M|
+    <ψ_bar|∂|ψₚ>/∂P * ∂P/∂|ψ> = -Tr(|ψ_bar><ψ| * |M><r|) exp(-loglike*3/2) * Pₙ|ψ>
+    <ψ_bar|∂|ψₚ>/∂P * ∂P/∂|ψ> = <ψ_bar|P|ψ> * exp(loglike) * exp(-loglike*3/2) * Pₙ|ψ>
+    <ψ_bar|∂|ψₚ>/∂P * ∂P/∂|ψ> = <ψ_bar|P|ψ> * exp(-loglike/2) * Pₙ|ψ>
+    """
+
+
     @assert remove_measured === false "Gradient with remove_measured=true not implemented"
 
-    ψ, result, loglike, projectors = projective_measurement_sample(ψ; indices=indices, reset=reset, remove_measured=remove_measured,
+    ψm, result, loglike, projectors = projective_measurement_sample(ψ; indices=indices, reset=reset, remove_measured=remove_measured,
                                                                                 norm_treshold=norm_treshold, get_projectors=true, get_loglike=true)
 
     function f̄(ȳ)
@@ -207,21 +222,33 @@ Zygote.@adjoint function projective_measurement_sample(ψ::MPS; indices=1:length
             @assert get_loglike === true
         end
 
+        if !gradient_averaging # If gradients are not expected to be averaged and one want the true gradient
+            if loglike_bar === nothing
+                loglike_bar = 0.
+            end
+            loglike_bar -= inner(ψ_bar, ψm) / 2.
+        end
+
         @assert result_bar === nothing
 
         ψ_out = nothing
+        projector_invs = [swapprime(projector, 0 => 1) for projector in projectors]
 
         if ψ_bar !== nothing
             ψ_out = copy(ψ_bar)
-            for i in 1:length(indices)
-                projector_inv = swapprime(projectors[i], 0 => 1)
-                ψ_out[indices[i]] = noprime(ψ_out[indices[i]] * projector_inv)
+            for (i, index) in enumerate(indices)
+                ψ_out[index] = noprime(ψ_out[index] * projector_invs[i])
             end
         end
-
         if loglike_bar != 0. && loglike_bar !== nothing
             f = 2 * exp(-loglike/2) * loglike_bar
-            ψ_bar_prob = ψ * f
+            ψ_bar_prob = ψm * f
+            if reset !== nothing
+                for (i, index) in enumerate(indices)
+                    projector_inv_norm = projector_invs[i]  ./ norm(projector_invs[i])
+                    ψ_bar_prob[index] = noprime(ψ_bar_prob[index] * projector_inv_norm)
+                end
+            end
 
             if ψ_out === nothing
                 ψ_out = ψ_bar_prob
@@ -230,22 +257,18 @@ Zygote.@adjoint function projective_measurement_sample(ψ::MPS; indices=1:length
             end
             
         end
-
         return (ψ_out,)
     end
-    if get_projectors
-        if get_loglike
-            return (ψ, result, loglike, projectors), f̄
-        else
-            return (ψ, result, projectors), f̄
-        end
-    else
-        if get_loglike
-            return (ψ, result, loglike), f̄
-        else
-            return (ψ, result), f̄
-        end
+
+    out = (ψm, result)
+    if get_loglike
+        out = (out..., loglike)
     end
+    if get_projectors
+        out = (out..., projectors)
+    end
+    
+    return out, f̄
 end
 
 

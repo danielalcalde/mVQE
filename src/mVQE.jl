@@ -44,9 +44,26 @@ MPOType = Union{MPO, PartialMPO}
 MPOVectorType = Vector{T} where T <: MPOType
 MPOTypes = Union{MPOType, MPOVectorType}
 
+
+
+function expect(ψ::MPS, H::MPO; kwargs...)
+    return real(inner(ψ', H, ψ; kwargs...))
+end
+
+function expect(ρ::MPO, H::MPO; kwargs...)
+    return real(inner(ρ, H; kwargs...))
+end
+
+Zygote.@adjoint function expect(ψ::MPS, H::MPO; kwargs...)
+    function f̄(ȳ)
+        ψbar = contract(H, ψ'; kwargs...)
+        return ȳ * 2 * ψbar, nothing
+    end
+   return expect(ψ, H; kwargs...), f̄
+end
+
 # Cost function
-loss(ψ::MPS, H::MPO; kwargs...) = real(inner(ψ', H, ψ; kwargs...))
-loss(ρ::MPO, H::MPO; kwargs...) = real(inner(ρ, H; kwargs...))
+loss(ψ::State, H::MPO; kwargs...) = expect(ψ, H; kwargs...)
 
 loss(ψ::States, H::PartialMPO; kwargs...) = real(expect(ψ, H; kwargs...))
 loss(ψ::States, Hs::MPOVectorType; kwargs...) = sum(real(expect(ψ, H; kwargs...)) for H in Hs)
