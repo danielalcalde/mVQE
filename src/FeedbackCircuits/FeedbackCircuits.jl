@@ -32,8 +32,8 @@ end
 
 struct VariationalMeasurementMCFeedback <: AbstractVariationalMeasurementCircuit
     vcircuits:: Vector{AbstractVariationalCircuit}
-    measurement_indices:: Vector{<:Integer}
-    reset:: Int
+    measurement_indices::Vector{<:Integer}
+    reset::Union{Nothing, Integer}
 end
 Flux.@functor VariationalMeasurementMCFeedback
 
@@ -66,7 +66,8 @@ measurement_indices = [1, 2]
 model = VariationalMeasurementMCFeedback(vcircuits, feedback_models, measurement_indices)
 ```
 """
-function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models::Vector, measurement_indices:: Vector{<:Integer}; reset:: Int=1) where T <: AbstractVariationalCircuit
+function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models::Vector, measurement_indices:: Vector{<:Integer};
+                                          reset::Union{Nothing, Integer}=1) where T <: AbstractVariationalCircuit
     # Initialize feedback models
     N_measurements = length(measurement_indices)
     @assert length(feedback_models) == length(vcircuits) - 1
@@ -83,23 +84,32 @@ function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models:
 end
 
 
-function (model::VariationalMeasurementMCFeedback)(ρ::States; get_measurements=false, kwargs...)
+function (model::VariationalMeasurementMCFeedback)(ρ::AbstractMPS; get_loglike=false, get_measurements=false, kwargs...)
     measurements = Matrix{Int16}(undef, length(model.measurement_indices), length(model))
     
     ρ = model.vcircuits[1](ρ; kwargs...)
-    ρ, m = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset)
+    ρ, m, loglike = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true)
     Zygote.@ignore measurements[:, 1] = m .- 1
-    
+
     for (i, vcircuit) in enumerate(model.vcircuits[2:end])
         ρ = vcircuit(ρ, measurements[:, 1:i]; kwargs...)
-        ρ, m = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset)
+        ρ, m, loglike_ = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true)
+        loglike += loglike_
         Zygote.@ignore measurements[:, i+1] = m .- 1
     end
 
     if get_measurements
-        return ρ, measurements
+        if get_loglike
+            return ρ, measurements, loglike
+        else
+            return ρ, measurements
+        end
     else
-        return ρ
+        if get_loglike
+            return ρ, loglike
+        else
+            return ρ
+        end
     end
 end
 
