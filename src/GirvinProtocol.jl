@@ -16,6 +16,9 @@ struct GirvinCircuit <: AbstractVariationalCircuit
 end
 Flux.@functor GirvinCircuit
 Flux.trainable(a::GirvinCircuit) = (a.params,)
+Circuits.get_N(a::GirvinCircuit) = size(a.params, 1) * 6
+Circuits.get_depth(a::GirvinCircuit) = size(a.params, 2)
+
 
 function GirvinCircuitIdeal(N_state::Int)
     θ_1 = 2 * atan(-1 / sqrt(2))
