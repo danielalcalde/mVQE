@@ -84,16 +84,16 @@ function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models:
 end
 
 
-function (model::VariationalMeasurementMCFeedback)(ρ::AbstractMPS; get_loglike=false, get_measurements=false, kwargs...)
+function (model::VariationalMeasurementMCFeedback)(ρ::AbstractMPS; get_loglike=false, get_measurements=false, gradient_averaging=true, kwargs...)
     measurements = Matrix{Int16}(undef, length(model.measurement_indices), length(model))
     
     ρ = model.vcircuits[1](ρ; kwargs...)
-    ρ, m, loglike = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true)
+    ρ, m, loglike = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
     Zygote.@ignore measurements[:, 1] = m .- 1
 
     for (i, vcircuit) in enumerate(model.vcircuits[2:end])
         ρ = vcircuit(ρ, measurements[:, 1:i]; kwargs...)
-        ρ, m, loglike_ = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true)
+        ρ, m, loglike_ = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
         loglike += loglike_
         Zygote.@ignore measurements[:, i+1] = m .- 1
     end
