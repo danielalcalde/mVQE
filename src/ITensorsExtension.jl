@@ -46,11 +46,6 @@ end
 @Zygote.adjoint ITensors.MPO(data::Vector{ITensor}, llim::Int, rlim::Int) = MPO(data, llim, rlim), c̄ -> (MPO(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
 @Zygote.adjoint ITensors.MPO(data::Vector{ITensor}; ortho_lims::UnitRange=1:length(data)) = MPO(data; ortho_lims), c̄ -> (MPO(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
 
-@Zygote.adjoint ITensors.MPS(data::Vector{ITensor}, llim::Int, rlim::Int) = MPS(data, llim, rlim), c̄ -> (MPS(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
-@Zygote.adjoint ITensors.MPS(data::Vector{ITensor}; ortho_lims::UnitRange=1:length(data)) = MPS(data; ortho_lims), c̄ -> (MPS(c̄.data, Zygote.ChainRulesCore.ZeroTangent(), Zygote.ChainRulesCore.ZeroTangent()),)
-
-
-
 # Make printing easier
 function Base.println(inds::NTuple{T, Index{Int64}} where {T})
     for (i, s) in enumerate(inds)

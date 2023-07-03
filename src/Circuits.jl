@@ -8,6 +8,7 @@ using Zygote
 using Statistics
 using Flux
 import Base
+using ITensorsExtensions: apply_onequbit, apply_nogategrad
 
 using ITensors: AbstractMPS
 
@@ -159,7 +160,7 @@ struct VariationalCircuitCorrRy <: AbstractVariationalCircuit
     odd::Bool
     VariationalCircuitCorrRy(params::Tuple, odd::Bool) = new(params, odd)
     VariationalCircuitCorrRy(params::Tuple; odd::Bool=false) = new(params, odd)
-    VariationalCircuitCorrRy() = new(Matrix{Float64}(undef, 0, 0)) # Empty circuit to be used as a placeholder
+    VariationalCircuitCorrRy() = new(()) # Empty circuit to be used as a placeholder
 end
 Flux.@functor VariationalCircuitCorrRy
 Base.size(model::VariationalCircuitCorrRy) = size(model.params)
