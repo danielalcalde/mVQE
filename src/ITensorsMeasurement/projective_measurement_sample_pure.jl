@@ -57,7 +57,7 @@ function projective_measurement_gate_sample(s, result::Int, prob::Real; reset=no
 end
 
 function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9,
-                                               get_projectors=false, get_loglike=false)
+                                               get_projectors=false, get_loglike=false, gradient_averaging=true)
     #println("Warning: projective_measurement_sample needs to be validated")
     local N, result, P
 
@@ -210,8 +210,8 @@ Zygote.@adjoint function projective_measurement_sample(ψ::MPS; indices=1:length
     @assert remove_measured === false "Gradient with remove_measured=true not implemented"
 
     ψm, result, loglike, projectors = projective_measurement_sample(ψ; indices=indices, reset=reset, remove_measured=remove_measured,
-                                                                                norm_treshold=norm_treshold, get_projectors=true, get_loglike=true)
-
+                                                                    norm_treshold=norm_treshold, get_projectors=true, get_loglike=true)
+    
     function f̄(ȳ)
         if length(ȳ) == 2
             ψ_bar, result_bar = ȳ
@@ -221,12 +221,14 @@ Zygote.@adjoint function projective_measurement_sample(ψ::MPS; indices=1:length
             ψ_bar, result_bar, loglike_bar = ȳ
             @assert get_loglike === true
         end
-
+        
+        ψm_dag = conj(ψm)
+        
         if !gradient_averaging # If gradients are not expected to be averaged and one want the true gradient
             if loglike_bar === nothing
                 loglike_bar = 0.
             end
-            loglike_bar -= inner(ψ_bar, ψm) / 2.
+            loglike_bar -= inner(ψ_bar, ψm_dag) / 2.
         end
 
         @assert result_bar === nothing
@@ -242,7 +244,7 @@ Zygote.@adjoint function projective_measurement_sample(ψ::MPS; indices=1:length
         end
         if loglike_bar != 0. && loglike_bar !== nothing
             f = 2 * exp(-loglike/2) * loglike_bar
-            ψ_bar_prob = ψm * f
+            ψ_bar_prob = ψm_dag * f
             if reset !== nothing
                 for (i, index) in enumerate(indices)
                     projector_inv_norm = projector_invs[i]  ./ norm(projector_invs[i])
