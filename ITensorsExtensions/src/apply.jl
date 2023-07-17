@@ -71,9 +71,10 @@ end
 function Zygote.rrule(
   ::typeof(apply_onequbit), gates::Vector{ITensor}, ψ::MPS; apply_dag=false, kwargs...
 )
-  ψo, gates_sorted, unsort_func = apply_gates_onequbit_unit(gates, ψ; get_sorted_gates=true)
+  ψo, gates_sorted, unsort_func = apply_onequbit(gates, ψ; get_sorted_gates=true)
 
   function apply_pullback(ψbar::Union{MPS,MPO})
+        N = length(ψ) 
         ψo_dag = conj(ψo)
         ψ_dag = conj(ψ)
         
@@ -99,7 +100,7 @@ function Zygote.rrule(
     
         # Derivative of wave funciton
         gates_dag = [swapprime(dag(gate), 0 => 1) for gate in gates[end:-1:1]]
-        ψ_out_bar = apply_gates_onequbit_unit(gates_dag, ψbar)
+        ψ_out_bar = apply_onequbit(gates_dag, ψbar)
         
         return (Zygote.NoTangent(), gates_out_bar, ψ_out_bar)
       end

@@ -8,7 +8,7 @@ using Zygote
 using Statistics
 using Flux
 import Base
-using ITensorsExtensions: apply_onequbit, apply_nogategrad
+import ITensorsExtensions
 
 using ITensors: AbstractMPS
 
@@ -41,20 +41,34 @@ Flux.trainable(model::AbstractVariationalCircuit) = (model.params,)
 
 Base.show(io::IO, c::AbstractVariationalCircuit) = print(io, "$(typeof(c))(N=$(get_N(c)), depth=$(get_depth(c)))")
 
-function generate_circuit(model::AbstractVariationalCircuit; params=nothing)
+function get_parameters(model::AbstractVariationalCircuit; params=nothing)
     if params === nothing
         @assert size(model.params, 1) > 0 "$(typeof(model)) is empty"
         params = model.params
     end
 
-    circuit = Tuple[]
-
     N = N = get_N(model)
     depth = get_depth(model)
+    return params, N, depth
+end
 
+
+function generate_circuit(model::AbstractVariationalCircuit; params=nothing)
+    params, N, depth = get_parameters(model; params)
+
+    circuit = Tuple[]
     return generate_circuit!(circuit, model; params, N, depth)
 end
 
+struct IdentityCircuit <: AbstractVariationalCircuit
+    N::Int
+end
+
+get_N(model::IdentityCircuit) = model.N
+get_depth(model::IdentityCircuit) = 0
+
+(model::IdentityCircuit)(ρ::States; kwargs...) = ρ
+Flux.trainable(model::IdentityCircuit) = ()
 
 struct VariationalCircuitComposed <: AbstractVariationalCircuit
     circuits::Vector{AbstractVariationalCircuit}
@@ -115,16 +129,14 @@ function generate_circuit!(circuit, model::VariationalCircuitRx; params=nothing,
         end
     end
 
-    
     return circuit
 end
 
 # Variational circuit with Ry gates
 struct VariationalCircuitRy{T <: Number} <: AbstractVariationalCircuit
     params::Matrix{T}
-    order::Bool
-    VariationalCircuitRy(params::Matrix{T}, order=false) where T <: Number = new{T}(params, order)
-    VariationalCircuitRy(N::Int, depth::Int; order=false, eltype=Float64) = new{eltype}(2π .* rand(N, depth), order)
+    VariationalCircuitRy(params::Matrix{T}, order=false) where T <: Number = new{T}(params)
+    VariationalCircuitRy(N::Int, depth::Int; order=false, eltype=Float64) = new{eltype}(2π .* rand(N, depth) .- π)
     VariationalCircuitRy() = new{Float64}(Matrix{Float64}(undef, 0, 0), false) # Empty circuit to be used as a placeholder
 end
 Flux.@functor VariationalCircuitRy
@@ -133,24 +145,20 @@ Base.size(model::VariationalCircuitRy, i::Int) = size(model.params, i)
 get_depth(model::VariationalCircuitRy) = size(model.params, 2)
 get_N(model::VariationalCircuitRy) = size(model.params, 1)
 
-
-function generate_circuit!(circuit, model::VariationalCircuitRy; params=nothing, N::Integer, depth::Integer)
-    if model.order
-        for d in 1:depth-1
-            circuit = vcat(circuit, Rylayer(params[:, d]))
-            circuit = vcat(circuit, CXlayer(N, d+1))
-        end
-
-        circuit = vcat(circuit, Rylayer(params[:, depth]))
-    else
-        for d in 1:depth
-            circuit = vcat(circuit, CXlayer(N, d))
-            circuit = vcat(circuit, Rylayer(params[:, d]))
-        end
-    end
-
+function (model::VariationalCircuitRy)(ρ::States; params=nothing, kwargs...)
+    params, N, depth = get_parameters(model; params=params)
     
-    return circuit
+    for d in 1:depth-1
+        circ = Rylayer(params[:, d])
+        ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, kwargs...)
+
+        circ = CXlayer(N, d+1)
+        ρ = ITensorsExtensions.runcircuit(ρ, circ; gate_grad=false, kwargs...)
+    end
+    circ = Rylayer(params[:, depth])
+    ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, kwargs...)
+
+    return ρ
 end
 
 VecVec = Vector{Vector{Float64}}
