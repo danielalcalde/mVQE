@@ -4,6 +4,32 @@ using Random
 using Distributed
 using DataStructures: DefaultDict
 
+struct ExponentialIterator{T<:Number}
+    n1::T
+    n2::T
+    k::Integer
+    skip_first::Bool
+    ExponentialIterator(n1::T, n2::T, k; skip_first::Bool=false) where T<:Number = new{T}(n1, n2, k, skip_first)
+        
+end
+Base.length(x::ExponentialIterator) = x.k
+function Base.iterate(x::ExponentialIterator, state::Int=0)
+    if state >= x.k
+        return nothing
+    end
+    return (get_elem(x, state), state + 1)
+end
+
+function get_elem(x::ExponentialIterator{T}, i::Integer) where T
+    i += x.skip_first
+    k = x.k + x.skip_first
+    n = x.n1 * (x.n2 / x.n1) ^ (i / (k-1))
+    if T <: Integer
+        n = Integer(round(n))
+    end
+    return n
+end
+
 function get_bit_string(n)
     b = Matrix{Int}(undef, n, 2^n)
     for i = 0:2^(n)-1
