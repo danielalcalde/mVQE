@@ -15,7 +15,8 @@ using ITensorsExtensions
 
 using ITensors: AbstractMPS
 
-include("FluxExtensions.jl")
+include("DistributedExtensions.jl")
+include("FluxExtensions/FluxExtensions.jl")
 include("pyflexmps.jl")
 include("Optimizers.jl")
 include("Misc.jl")
