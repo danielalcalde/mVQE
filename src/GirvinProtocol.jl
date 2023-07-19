@@ -72,6 +72,8 @@ Flux.trainable(a::GirvinCorrCircuit) = ()
 
 Base.size(model::GirvinCorrCircuit) = size(model.params)
 Base.size(model::GirvinCorrCircuit, i::Int) = size(model.params, i)
+Circuits.get_N(a::GirvinCorrCircuit) = size(a.params, 1) * 4
+Circuits.get_depth(a::GirvinCorrCircuit) = 6
 
 
 function Circuits.generate_circuit(::GirvinCorrCircuit; params=nothing)
@@ -128,7 +130,7 @@ struct GirvinCorrectionNetwork end
 Flux.@functor GirvinCorrectionNetwork
 Flux.trainable(::GirvinCorrectionNetwork) = ()
 
-function (t::GirvinCorrectionNetwork)(M::Vector{T}) where T <: Integer
+function (t::GirvinCorrectionNetwork)(M::Vector{T}) where T <: Real
     Zygote.@ignore begin
     correction_gates_params = Dict()  
     correction_gates_params[Vector{T}([0, 0])] = [pi/2, pi/2, pi/2, 0]
