@@ -1,26 +1,31 @@
-struct ReshapeModel
-    model
-    output_shape
-end
-Flux.@functor ReshapeModel
-Flux.trainable(a::ReshapeModel) = (a.model,)
-
-(f::ReshapeModel)(input; kwargs...) = reshape(f.model(input[:]; kwargs...), f.output_shape)
-
 struct FeedbackCircuit <: AbstractVariationalCircuit
     vcircuit::AbstractVariationalCircuit
     model
 end
 Flux.@functor FeedbackCircuit
 Flux.trainable(a::FeedbackCircuit) = (a.model,)
+Base.show(io::IO, model::FeedbackCircuit) = print(io, "FeedbackCircuit(\n ", model.vcircuit, ",\n ", model.model, ")")
 
 function FeedbackCircuit(vcircuit, model, input_shape)
-    output_shape = size(vcircuit)
+    output_shape = vector_size(vcircuit)
+    
+    input_dims = prod(input_shape)
+
     if output_shape isa Vector
-        @assert false "FeedbackCircuit does not support vector output"
+        output_dims = prod(output_shape)
+        model = model(input_dims, output_dims)
+        model = ReshapeModel(model, Tuple(output_shape))
+
+    elseif output_shape isa Tuple # Nested tuple
+        output_dims = 1
+        fmap(output_shape) do shape
+            output_dims *= prod(shape)
+        end
+        model = model(input_dims, output_dims)
+        model = NestedReshapeModel(model, output_shape)
     end
-    model = model(prod(input_shape), prod(output_shape))
-    model = ReshapeModel(model, output_shape)
+
+    
     return FeedbackCircuit(vcircuit, model)
 end
 
@@ -116,5 +121,3 @@ function (model::VariationalMeasurementMCFeedback)(ρ::AbstractMPS;
         end
     end
 end
-
-#include("LinearFeedback.jl")

@@ -30,7 +30,7 @@ include("StateFactory.jl")
 
 include("Gates.jl")
 include("Layers.jl")
-include("Circuits.jl")
+include("Circuits/Circuits.jl")
 include("GirvinProtocol.jl")
 
 
