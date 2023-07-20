@@ -30,7 +30,7 @@ SnoopCompile.@snoopc "./colortypes_compiles.log" begin
     using mVQE.Circuits: AbstractVariationalMeasurementCircuit, AbstractVariationalCircuit
     using mVQE: loss, optimize_and_evolve
     using mVQE.Misc: get_ancilla_indices, pprint
-    using mVQE.Optimizers: OptimizerWrapper
+    using OptimizersExtension: OptimizerWrapper
     end
 
     println("comp")

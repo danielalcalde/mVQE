@@ -18,7 +18,6 @@ using ITensors: AbstractMPS
 include("DistributedExtensions.jl")
 include("FluxExtensions/FluxExtensions.jl")
 include("pyflexmps.jl")
-include("Optimizers.jl")
 include("Misc.jl")
 include("Hamiltonians.jl")
 
@@ -38,7 +37,7 @@ using ..ITensorsExtension: VectorAbstractMPS, States
 using ..ITensorsMeasurement: projective_measurement, projective_measurement_sample
 using ..MPOExtensions: PartialMPO
 using ..Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit
-using ..Optimizers: callback_, optimize
+using OptimizersExtension: callback_, optimize
 
 PartialMPOs = Union{PartialMPO, Vector{PartialMPO}}
 
