@@ -11,7 +11,7 @@ function sample_and_probs(ρj::ITensor, s, d)
     pn = 0.0
     while n <= d
         projn = ITensor(s)
-        projn[s => n] = 1.0
+        projn[s => n] = 1
         pnc = (ρj * projn * prime(projn))[]
         if imag(pnc) > 1e-6
             @warn "Sample probability $pnc is complex."
@@ -46,11 +46,11 @@ function projective_measurement_sample(ρ::MPO; indices=1:length(ρ), reset=noth
         end
 
         norm_ = R[1][]
-        if abs(1.0 - R[1][]) < norm_treshold
+        if abs(1 - R[1][]) < norm_treshold
             R = R / norm_
             ρ[1] = ρ[1] / norm_
         else
-            error("sample: MPO is not normalized, norm=$(tr(ρ)), $(abs(1.0 - R[1][]))> $norm_treshold")
+            error("sample: MPO is not normalized, norm=$(tr(ρ)), $(abs(1 - R[1][]))> $norm_treshold")
         end
     
     end
@@ -137,11 +137,11 @@ function projective_measurement_sample2(ρ::MPO; indices=1:length(ρ), reset=not
         end
 
         # Normalize the MPO if the normalization is not to bad
-        if abs(1.0 - R[1][]) < norm_treshold
+        if abs(1 - R[1][]) < norm_treshold
             R = R / R[1][]
             ρ[1] = ρ[1] / R[1][]
         else
-            error("sample: MPO is not normalized, norm=$(tr(ρ)), $(abs(1.0 - R[1][]))> $norm_treshold")
+            error("sample: MPO is not normalized, norm=$(tr(ρ)), $(abs(1 - R[1][]))> $norm_treshold")
         end
         
         ρj = ρ[1] * R[2]

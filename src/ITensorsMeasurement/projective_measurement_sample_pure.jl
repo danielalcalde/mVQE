@@ -5,7 +5,7 @@ function sample_and_probs_mps(A::ITensor, s, d; random_number=rand())
     n = 1
     while n <= d
         projn = ITensor(s)
-        projn[s => n] = 1.
+        projn[s => n] = 1
         An = A * dag(projn)
         pn = real(scalar(dag(An) * An))
         pdisc += pn
@@ -18,16 +18,16 @@ end
 function sample_and_probs_mps2(P::ITensor, ψi::ITensor, s, linkind_P, d; random_number=rand())
     local An, projn, prob, Pn
 
-    pdisc = 0.
+    pdisc = 0
     n = 1
     # Remove the prime from the index A.tensor.inds[1]
     if linkind_P !== nothing
-        tracer = delta(linkind_P, prime(linkind_P))
+        tracer = δ(eltype(ψi), linkind_P, prime(linkind_P))
     end
     
     while n <= d
         projn = ITensor(s)
-        projn[s => n] = 1.
+        projn[s => n] = 1
         An = ψi * dag(projn)
         Pn = P * An * prime(dag(An))
         if linkind_P === nothing
@@ -47,16 +47,16 @@ function projective_measurement_gate_sample(s, result::Int, prob::Real; reset=no
     projn = ITensor(s, sₚ)
     Zygote.ignore() do
         if reset === nothing
-            projn[s => result, sₚ => result] = 1. / sqrt(prob)
+            projn[s => result, sₚ => result] = 1 / sqrt(prob)
         else
             @assert reset <= dim(s)
-            projn[s => result, sₚ => reset] = 1. / sqrt(prob)
+            projn[s => result, sₚ => reset] = 1 / sqrt(prob)
         end
     end
     return projn
 end
 
-function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=nothing, remove_measured=false, norm_treshold=0.9,
+function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset::Union{Nothing, Integer, Vector{<:Integer}}=nothing, remove_measured=false, norm_treshold=0.9,
                                                get_projectors=false, get_loglike=false, gradient_averaging=true)
     #println("Warning: projective_measurement_sample needs to be validated")
     local N, result, P
@@ -75,10 +75,10 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
     end
 
     n = norm(ψ[1])
-    if abs(1.0 - n) < norm_treshold
-        ψ[1] *= (1.0 / n)
+    if abs(1 - n) < norm_treshold
+        ψ[1] *= (1 / n)
     else
-        error("sample: MPS is not normalized, norm=$(n), $(abs(1.0 - n)))> $norm_treshold")
+        error("sample: MPS is not normalized, norm=$(n), $(abs(1 - n)))> $norm_treshold")
     end
 
     result = zeros(Int, length(indices))
@@ -106,7 +106,7 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
                 #     O--
                 result[i], prob, An = sample_and_probs_mps(ψ[1], s, d)
                 P = An * prime(dag(An))
-                P *= (1. / prob)
+                P *= (1 / prob)
             else
                 # Diagramm P * ψj * ψj':
                 #              O-- --O-- ψj
@@ -119,13 +119,12 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
 
                 linkind_P = linkind(ψ, j)
                 result[i], prob, P = sample_and_probs_mps2(P, ψ[j], s, linkind_P, d)
-                P *= (1. / prob)
+                P *= (1 / prob)
             end
         
 
             # Get the projector
             projectors[i] = projective_measurement_gate_sample(s, result[i], prob; reset=reset[i])
-            
             # Apply the projector
             ψ[j] = noprime(ψ[j] * projectors[i])
             loglike += log(prob)
@@ -159,20 +158,18 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset=noth
             linkind_P = linkind(ψ, j)
             tracer = delta(linkind_P, prime(linkind_P))
             prob = real(scalar(tracer * P))
-            @assert abs(1.0 - prob) < 1e-8
+            @assert abs(1 - prob) < 1e-8
         end
         =#
 
     end
-    
+    println("a")
+    println([eltype(ʋi) for ʋi in ψ])
     orthogonalize!(ψ, 1)
-
-    get_projectors 
-
+    println([eltype(ʋi) for ʋi in ψ])
     if remove_measured
         ψ = reduce_MPS(ψ, indices, result)
     end
-
     
     out = (ψ, result)
     if get_loglike
@@ -294,7 +291,7 @@ function reduce_MPS(ψ::MPS, indices::Vector{<:Integer}, values::Vector{<:Intege
         if i in indices
             s = siteind(ψ, i)
             projn = ITensor(s)
-            projn[s => values[j]] = 1.
+            projn[s => values[j]] = 1
             P = ψi * projn
             j += 1
         else
@@ -340,10 +337,10 @@ function projective_measurement_sample_old(ψ::MPS; indices=1:length(ψ), reset=
         #TODO: Check that the qubits are in the right order
 
         n = norm(ψo[1])
-        if abs(1.0 - n) < norm_treshold
-            ψo[1] *= (1.0 / n)
+        if abs(1 - n) < norm_treshold
+            ψo[1] *= (1 / n)
         else
-            error("sample: MPS is not normalized, norm=$(n), $(abs(1.0 - n)))> $norm_treshold")
+            error("sample: MPS is not normalized, norm=$(n), $(abs(1 - n)))> $norm_treshold")
         end
 
         result = zeros(Int, length(indices))
@@ -369,7 +366,7 @@ function projective_measurement_sample_old(ψ::MPS; indices=1:length(ψ), reset=
                         #     O--
                         result[i], prob, An = sample_and_probs_mps(ψo[1], s, d)
                         P = An * prime(dag(An))
-                        P *= (1. / prob)
+                        P *= (1 / prob)
                     else
                         # Diagramm P * ψj * ψj':
                         #              O-- --O-- ψj
@@ -382,7 +379,7 @@ function projective_measurement_sample_old(ψ::MPS; indices=1:length(ψ), reset=
 
                         linkind_P = linkind(ψo, j)
                         result[i], prob, P = sample_and_probs_mps2(P, ψo[j], s, linkind_P, d)
-                        P *= (1. / prob)
+                        P *= (1 / prob)
                     end
                 end
 
@@ -423,7 +420,7 @@ function projective_measurement_sample_old(ψ::MPS; indices=1:length(ψ), reset=
                 linkind_P = linkind(ψ, j)
                 tracer = delta(linkind_P, prime(linkind_P))
                 prob = real(scalar(tracer * P))
-                @assert abs(1.0 - prob) < 1e-8
+                @assert abs(1 - prob) < 1e-8
             end
             =#
 

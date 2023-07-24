@@ -5,11 +5,11 @@ function projective_measurement_gate(s; reset=nothing)
     Zygote.ignore() do
         if reset === nothing   
             for l in 1:s.space
-                projn[sₚ => l, s => l, kraus => l] = 1.
+                projn[sₚ => l, s => l, kraus => l] = 1
             end
         else
             for l in 1:s.space
-                projn[sₚ => reset, s => l, kraus => l] = 1.
+                projn[sₚ => reset, s => l, kraus => l] = 1
             end
         end
     end
@@ -71,11 +71,11 @@ function projective_measurement(ρ::MPO; indices=1:length(ρ), reset=nothing)
             Zygote.ignore() do
                 if reset === nothing   
                     for l in 1:s1.space
-                        projn[s1 => l, s2 => l, s1ₚ => l, s2ₚ => l] = 1.
+                        projn[s1 => l, s2 => l, s1ₚ => l, s2ₚ => l] = 1
                     end
                 else
                     for l in 1:s1.space
-                        projn[s1 => l, s2 => l, s1ₚ => reset[j], s2ₚ => reset[j]] = 1.
+                        projn[s1 => l, s2 => l, s1ₚ => reset[j], s2ₚ => reset[j]] = 1
                     end
                 end
             end
