@@ -44,19 +44,17 @@ Base.size(model::VariationalCircuitRy, i::Int) = size(model.params, i)
 get_depth(model::VariationalCircuitRy) = size(model.params, 2)
 get_N(model::VariationalCircuitRy) = size(model.params, 1)
 
-function (model::VariationalCircuitRy)(ρ::States; params=nothing, kwargs...)
+function (model::VariationalCircuitRy{T})(ρ::States; params=nothing, eltype=nothing, kwargs...) where T <: Number
     params, N, depth = get_parameters(model; params=params)
-    
     for d in 1:depth-1
         circ = Rylayer(params[:, d])
-        ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, kwargs...)
+        ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, eltype=T, kwargs...)
 
         circ = CXlayer(N, d+1)
-        ρ = ITensorsExtensions.runcircuit(ρ, circ; gate_grad=false, kwargs...)
+        ρ = ITensorsExtensions.runcircuit(ρ, circ; gate_grad=false, eltype=T, kwargs...)
     end
     circ = Rylayer(params[:, depth])
-    ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, kwargs...)
-
+    ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, eltype=T, kwargs...)
     return ρ
 end
 

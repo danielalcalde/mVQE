@@ -163,10 +163,6 @@ function projective_measurement_sample(ψ::MPS; indices=1:length(ψ), reset::Uni
         =#
 
     end
-    println("a")
-    println([eltype(ʋi) for ʋi in ψ])
-    orthogonalize!(ψ, 1)
-    println([eltype(ʋi) for ʋi in ψ])
     if remove_measured
         ψ = reduce_MPS(ψ, indices, result)
     end
