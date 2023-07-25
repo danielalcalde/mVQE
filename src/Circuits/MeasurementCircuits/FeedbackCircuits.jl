@@ -99,7 +99,7 @@ function (model::VariationalMeasurementMCFeedback)(ρ::AbstractMPS;
     Zygote.@ignore measurements[:, 1] = m .- 1
 
     for (i, vcircuit) in enumerate(model.vcircuits[2:end])
-        eltype_ = Base.eltype(ρ[1])
+        eltype_ = real(Base.eltype(ρ[1]))
         M = Zygote.@ignore eltype_.(measurements[:, 1:i])
         ρ = vcircuit(ρ, M; kwargs...)
 
