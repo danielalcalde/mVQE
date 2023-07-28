@@ -295,9 +295,7 @@ function optimize_and_evolve(ψs::States, H::MPOTypes, model::AbstractVariationa
         loss_and_grad = get_loss_and_grad(ψs, H; sample_nr, parallel, fix_seed, threaded, kwargs...)
     end
 
-    model_optim, loss_v, gradient_, niter, history = optimize(loss_and_grad, model, optimizer, callback; kwargs_optim...)
-    
-    misc = Dict("loss" => loss_v, "gradient" => gradient_, "niter" => niter, "history" => history)
+    model_optim, loss_v, misc = optimize(loss_and_grad, model, optimizer, callback; kwargs_optim...)
 
     return loss_v, model_optim, model_optim(ψs; kwargs...), misc
 end

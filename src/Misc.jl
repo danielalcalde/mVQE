@@ -43,14 +43,11 @@ function dict_to_string(a::Dict)
     result = ""
     
     for (i, (key, value)) in enumerate(a)
-        
         if i != 1
             result *= "_"
         end
-        
         result *= "$(key)=$(value)"
     end
-    
     return result
 end
 
