@@ -12,7 +12,8 @@ function runcircuit(
    device=identity,
    gate_grad=true,
    onequbit_gates=false,
-   unitary=false
+   unitary=false,
+   verbose=false
    )
    @assert noise === nothing "Noise is not implemented yet."
 

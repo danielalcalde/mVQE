@@ -100,6 +100,6 @@ include("VariationalCircuitR.jl")
 include("VariationalCircuitSymRy.jl")
 include("MeasurementCircuits/MeasurementCircuits.jl")
 include("CompleteUnitary.jl")
-
+include("VariationalCircuitTwoQubitGate.jl")
 #end
 end # module

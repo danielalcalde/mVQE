@@ -32,19 +32,20 @@ function generate_circuit!(circuit, model::VariationalCircuitRx; params=nothing,
 end
 
 # Variational circuit with Ry gates
-struct VariationalCircuitRy{T <: Number} <: AbstractVariationalCircuit
+abstract type AbstractVariationalCircuitRy{T<:Number} <: AbstractVariationalCircuit end
+struct VariationalCircuitRy{T <: Number} <: AbstractVariationalCircuitRy{T}
     params::Matrix{T}
-    VariationalCircuitRy(params::Matrix{T}, order=false) where T <: Number = new{T}(params)
-    VariationalCircuitRy(N::Int, depth::Int; order=false, eltype=Float64) = new{eltype}(2π .* rand(N, depth) .- π)
-    VariationalCircuitRy() = new{Float64}(Matrix{Float64}(undef, 0, 0), false) # Empty circuit to be used as a placeholder
+    VariationalCircuitRy(params::Matrix{T},) where T <: Number = new{T}(params)
+    VariationalCircuitRy(N::Int, depth::Int; eltype=Float64) = new{eltype}(2π .* rand(N, depth) .- π)
+    VariationalCircuitRy() = new{Float64}(Matrix{Float64}(undef, 0, 0)) # Empty circuit to be used as a placeholder
 end
 Flux.@functor VariationalCircuitRy
-Base.size(model::VariationalCircuitRy) = size(model.params)
-Base.size(model::VariationalCircuitRy, i::Int) = size(model.params, i)
-get_depth(model::VariationalCircuitRy) = size(model.params, 2)
-get_N(model::VariationalCircuitRy) = size(model.params, 1)
+Base.size(model::AbstractVariationalCircuitRy) = size(model.params)
+Base.size(model::AbstractVariationalCircuitRy, i::Int) = size(model.params, i)
+get_depth(model::AbstractVariationalCircuitRy) = size(model.params, 2)
+get_N(model::AbstractVariationalCircuitRy) = size(model.params, 1)
 
-function (model::VariationalCircuitRy{T})(ρ::States; params=nothing, eltype=nothing, kwargs...) where T <: Number
+function (model::AbstractVariationalCircuitRy{T})(ρ::States; params=nothing, eltype=nothing, kwargs...) where T <: Number
     params, N, depth = get_parameters(model; params=params)
     for d in 1:depth-1
         circ = Rylayer(params[:, d])
@@ -56,6 +57,35 @@ function (model::VariationalCircuitRy{T})(ρ::States; params=nothing, eltype=not
     circ = Rylayer(params[:, depth])
     ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, eltype=T, kwargs...)
     return ρ
+end
+
+
+struct VariationalCircuitRyPeriodic{T <: Number} <: AbstractVariationalCircuitRy{T}
+    params::Matrix{T}
+    N::Int
+    VariationalCircuitRyPeriodic(params::Matrix{T}) where T <: Number = new{T}(params)
+    VariationalCircuitRyPeriodic(N::Int, period::Int, depth::Int; eltype=Float64) = new{eltype}(2π .* rand(period, depth) .- π, N)
+    VariationalCircuitRyPeriodic() = new{Float64}(Matrix{Float64}(undef, 0, 0), 0) # Empty circuit to be used as a placeholder
+end
+Flux.@functor VariationalCircuitRyPeriodic
+get_N(model::VariationalCircuitRyPeriodic) = model.N
+
+function get_parameters(model::VariationalCircuitRyPeriodic; params=nothing)
+    if params === nothing
+        @assert size(model.params, 1) > 0 "$(typeof(model)) is empty"
+        params = model.params
+    end
+
+    N = get_N(model)
+    depth = get_depth(model)
+
+    # Fill in the parameters into N qubit circuit periodically
+    duplications = div(N, size(params, 1))
+    @assert duplications * size(params, 1) == N "Number of qubits must be a multiple of the number of parameters"
+
+    params = repeat(params, duplications, 1)
+
+    return params, N, depth
 end
 
 VecVec = Vector{Vector{Float64}}

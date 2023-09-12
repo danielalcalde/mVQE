@@ -28,3 +28,13 @@ function ITensors.op(::OpName"CU", ::SiteType"Qubit"; θ::Vector{T}) where T <: 
 
 #end
 end
+
+function ITensors.op(::OpName"CX_Id", ::SiteType"Qubit"; θ::Number) 
+  a = cos(θ)
+  b = sin(θ)
+  return [
+  1 0 0 0
+  0 1 0 0
+  0 0 a b
+  0 0 b a]
+end 

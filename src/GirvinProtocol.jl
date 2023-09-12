@@ -5,8 +5,8 @@ using Flux
 using Zygote
 
 using ..Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit, VariationalMeasurementMCFeedback
-using mVQE: Circuits
 using ..Misc: get_ancilla_indices
+using mVQE: Circuits, Layers
 
 struct GirvinCircuit <: AbstractVariationalCircuit
     params::Matrix{Float64}
@@ -23,7 +23,7 @@ Circuits.get_depth(a::GirvinCircuit) = size(a.params, 2)
 function GirvinCircuitIdeal(N_state::Int)
     θ_1 = 2 * atan(-1 / sqrt(2))
     θ_2 = 2 * atan(sqrt(2))
-    params = hcat(fill([pi, -pi/2, θ_1, θ_2, pi, θ_1, θ_2, pi], Int(N_state/4))...)'
+    params = hcat(fill([pi, -pi/2, θ_1, θ_2, -pi, θ_1, θ_2, -pi], Int(N_state/4))...)'
     return GirvinCircuit(Array(params))
 end
 
@@ -50,10 +50,12 @@ end
 
 singlet_gate_p(i1, i2, θ_1, θ_2) = [("Rx", i1, (θ=θ_1,)), ("Ry", i2, (θ=θ_2,)), ("CX", (i2, i1))]
 
-U_gate_L_p(c_in, i1, i2, θ_1, θ_2, ϕ_1) =[("CX", (c_in, i1)), ("CRy", (i1, c_in), (θ = θ_1,)), ("Rx", i1, (θ=ϕ_1,)),("CRy", (i1, i2), (θ = θ_2,)), ("X", i1),
+U_gate_L_p(c_in, i1, i2, θ_1, θ_2, ϕ_1) =[("CX", (c_in, i1)), ("CRy", (i1, c_in), (θ = θ_1,)), ("Rx", i1, (θ=ϕ_1,)),
+                        ("CRy", (i1, i2), (θ = θ_2,)), ("X", i1),
                         ("CX", (c_in, i1)), ("CX", (i1, i2)), ("CX", (i2, i1))]
 
-U_gate_R_p(c_in, i1, i2, θ_1, θ_2, ϕ_1) =[("CX", (c_in, i1)), ("CRy", (i1, c_in), (θ = θ_1,)), ("Rx", i1, (θ=ϕ_1,)),("CRy", (i1, i2), (θ = θ_2,)), ("X", i1),
+U_gate_R_p(c_in, i1, i2, θ_1, θ_2, ϕ_1) =[("CX", (c_in, i1)), ("CRy", (i1, c_in), (θ = θ_1,)), ("Rx", i1, (θ=ϕ_1,)),
+                        ("CRy", (i1, i2), (θ = θ_2,)), ("X", i1),
                         ("CX", (c_in, i1)), ("CX", (i1, i2)), ("CX", (i2, i1)), ("SWAP", c_in, i1)]
 
 U2_gate_p(i0, i1, i2, i3, i4, i5, θ_1, θ_2, ϕ_1, θ_3, θ_4, ϕ_2) = vcat(U_gate_L_p(i2, i1, i0, θ_1, θ_2, ϕ_1), U_gate_R_p(i3, i4, i5, θ_3, θ_4, ϕ_2))
@@ -162,5 +164,50 @@ function GirvinMCFeedback(N_state::Int, ancilla_indices::Vector{<:Integer})
     model = VariationalMeasurementMCFeedback(vmodels, [dense], ancilla_indices)
     return model
 end
+
+
+# Variational girvin Correction circuit
+
+# Variational circuit with a parametrized two qubit gate
+struct VariationalCircuitTwoQubitGateGirvinCorr <: AbstractVariationalCircuit
+    params::Array{Float64, 3}
+    gate_type::String
+    VariationalCircuitTwoQubitGateGirvinCorr(params::Array{Float64, 3}; gate_type="CX_Id") = new(params, gate_type)
+    VariationalCircuitTwoQubitGateGirvinCorr(N::Int, depth::Int; gate_type="CX_Id") = new(2π .* rand(N, 2, depth), gate_type)
+    VariationalCircuitTwoQubitGateGirvinCorr(; gate_type="CX_Id") = new(Array{Float64, 3}(undef, 0, 0, 0), gate_type) # Empty circuit to be used as a placeholder
+end
+Flux.@functor VariationalCircuitTwoQubitGateGirvinCorr
+Base.size(model::VariationalCircuitTwoQubitGateGirvinCorr) = size(model.params)
+Base.size(model::VariationalCircuitTwoQubitGateGirvinCorr, i::Int) = size(model.params, i)
+get_depth(model::VariationalCircuitTwoQubitGateGirvinCorr) = size(model.params, 3)
+get_N(model::VariationalCircuitTwoQubitGateGirvinCorr) = size(model.params, 1) * 3 ÷ 2
+Flux.trainable(a::VariationalCircuitTwoQubitGateGirvinCorr) = (a.params,)
+
+function generate_circuit!(circuit, c::VariationalCircuitTwoQubitGateGirvinCorr; params=nothing, N::Integer, depth::Integer)
+    for d in 1:depth
+        circuit = vcat(circuit, Rylayer(params[:, 1, d]))
+        circuit = vcat(circuit, BrickLayer(N, d, params[:, 2, d]; gate=c.gate_type))
+    end
+    return circuit
+end
+
+
+function Circuits.generate_circuit(c::VariationalCircuitTwoQubitGateGirvinCorr; params=nothing)
+    @assert params !== nothing
+    @assert size(params, 2) == 2
+    N = size(params, 1)
+    depth = size(params, 3)
+    N_state = N
+    
+    state_indices, = Zygote.@ignore get_ancilla_indices(N_state, [false, true, true, true, true, false])
+    circuit = Vector()
+    
+    for d in 1:depth
+        circuit = vcat(circuit, Layers.Rylayer(params[:, 1, d]; sites=state_indices))
+        circuit = vcat(circuit, Layers.BrickLayer(N, 1, params[:, 2, d]; gate=c.gate_type, sites=state_indices))
+    end
+    return circuit
+end
+
 
 end # module

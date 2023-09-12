@@ -5,7 +5,11 @@ end
 Flux.@functor ReshapeModel
 Flux.trainable(a::ReshapeModel) = (a.model,)
 
-(f::ReshapeModel)(input; kwargs...) = reshape(f.model(input[:]; kwargs...), f.output_shape)
+function (f::ReshapeModel)(input; kwargs...)
+    o = f.model(input[:]; kwargs...)
+    @assert length(o) == prod(f.output_shape) "ReshapeModel: Output shape $(size(o)) does not match $(f.output_shape)"
+    return reshape(o, f.output_shape)
+end
 
 
 struct NestedReshapeModel

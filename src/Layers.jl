@@ -1,24 +1,30 @@
 module Layers
 
-Rzlayer(θ; offset=0) = [("Rz", i + offset, (θ = θi,)) for (i, θi) in enumerate(θ)]
-Rylayer(θ; offset=0) = [("Ry", i + offset, (θ = θi,)) for (i, θi) in enumerate(θ)]
-Rxlayer(θ; offset=0) = [("Rx", i + offset, (θ = θi,)) for (i, θi) in enumerate(θ)]
+OneGateLayer(θ; offset=0, gate="Ry", sites=1:length(θ)) = [(gate, sites[i] + offset, (θ = θi,)) for (i, θi) in enumerate(θ)]
+
+Rzlayer(θ; kwargs...) = OneGateLayer(θ; kwargs..., gate="Rz")
+Rylayer(θ; kwargs...) = OneGateLayer(θ; kwargs..., gate="Ry")
+Rxlayer(θ; kwargs...) = OneGateLayer(θ; kwargs..., gate="Rx")
+
 Ulayer(θ) = [("U", i, (θ = θ[i, :],)) for i in 1:size(θ, 1)]
 
-# brick-layer of CRX gates
-function CRxlayer(N, Π, θs)
+# One parameter brick-layer
+function BrickLayer(N, Π, θs; offset=0, gate="CX_Id", sites=1:N)
     start = isodd(Π) ? 1 : 2
-    return [("CRx", (j, j + 1), (θ = θs[i],)) for (i, j) in enumerate(start:2:(N - 1))]
+    start += offset
+    return [(gate, (sites[j], sites[j + 1]), (θ = θs[i],)) for (i, j) in enumerate(start:2:(N - 1))]
 end
 
-# brick-layer of CRX gates
-function CRylayer(N, Π, θs)
-    start = isodd(Π) ? 1 : 2
-    return [("CRy", (j, j + 1), (θ = θs[i],)) for (i, j) in enumerate(start:2:(N - 1))]
-end
+CRxlayer(args...; kwargs...) = BrickLayer(args...; gate="CRx", kwargs...)
+CRylayer(args...; kwargs...) = BrickLayer(args...; gate="CRy", kwargs...)
+CRzlayer(args...; kwargs...) = BrickLayer(args...; gate="CRz", kwargs...)
 
-function CUlayer(N, Π, θs)
+CX_Idlayer(args...; kwargs...) = BrickLayer(args...; gate="CX_Id", kwargs...)
+
+
+function CUlayer(N, Π, θs; offset=0)
     start = isodd(Π) ? 1 : 2
+    start += offset
     @assert size(θs, 2) == 4 "θs must be of shape (4, depth) and not $(size(θs))"
     return [("CU", (j, j + 1), (θ = θs[i, :],)) for (i, j) in enumerate(start:2:(N - 1))]
 end
@@ -30,8 +36,12 @@ function CUlayer_broken(N, Π, θs; broken=6)
 end
 
 # brick-layer of CX gates
-function CXlayer(N, Π)
+function CXlayer(N, Π; offset=0, reverse=false)
     start = isodd(Π) ? 1 : 2
+    start += offset
+    if reverse
+        return [("CX", (j+1, j)) for j in start:2:(N - 1)]
+    end
     return [("CX", (j, j + 1)) for j in start:2:(N - 1)]
 end
 

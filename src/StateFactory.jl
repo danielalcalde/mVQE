@@ -24,18 +24,24 @@ function random_MPS(hilbert, k; ancilla_indices=nothing)
     return ψs, states
 end
 
-function infinite_temp_MPO(hilbert)
+function infinite_temp_MPO(hilbert; normalize=true, eltype=Complex{Float64})
     N = length(hilbert)
     ρ = MPO(N)
     @assert N > 1
+
+    if normalize
+        norm = 0.5
+    else
+        norm = 1.
+    end
 
     # First Index
     s = hilbert[1]
     sₚ = prime(s)
     link_right = Index(1, "Link,l=1")
-    t = ITensor(link_right, s, sₚ)
-    t[link_right => 1, s => 1, sₚ => 1] = 0.5 + 0.0im
-    t[link_right => 1, s => 2, sₚ => 2] = 0.5 + 0.0im
+    t = ITensor(eltype, link_right, s, sₚ)
+    t[link_right => 1, s => 1, sₚ => 1] = norm
+    t[link_right => 1, s => 2, sₚ => 2] = norm
     ρ[1] = t
 
     for i in 2:N-1
@@ -43,9 +49,9 @@ function infinite_temp_MPO(hilbert)
         sₚ = prime(s)
         link_left = link_right
         link_right = Index(1, "Link,l=$i")
-        t = ITensor(link_left, link_right, s, sₚ)
-        t[link_left => 1, link_right => 1, s => 1, sₚ => 1] = 0.5 + 0.0im
-        t[link_left => 1, link_right => 1, s => 2, sₚ => 2] = 0.5 + 0.0im
+        t = ITensor(eltype, link_left, link_right, s, sₚ)
+        t[link_left => 1, link_right => 1, s => 1, sₚ => 1] = norm
+        t[link_left => 1, link_right => 1, s => 2, sₚ => 2] = norm
         ρ[i] = t
     end
     
@@ -53,8 +59,8 @@ function infinite_temp_MPO(hilbert)
     s = hilbert[N]
     sₚ = prime(s)
     t = ITensor(link_right, s, sₚ)
-    t[link_right => 1, s => 1, sₚ => 1] = 0.5 + 0.0im
-    t[link_right => 1, s => 2, sₚ => 2] = 0.5 + 0.0im
+    t[link_right => 1, s => 1, sₚ => 1] = norm
+    t[link_right => 1, s => 2, sₚ => 2] = norm
     ρ[N] = t
 
     return ρ
