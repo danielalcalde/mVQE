@@ -1,7 +1,7 @@
 module Hamiltonians
 using ITensors
 using PastaQ
-using ..pyflexmps: convert_sympy_to_opsum, pfs
+using pyflexmps: convert_sympy_to_opsum, pfs
 using SymPy
 
 function hamiltonian_tfi(state_indices, h)
@@ -62,6 +62,7 @@ function hamiltonian_aklt_spin1_symb(;base="girvin")
         singlet = pfs.KetSpinHalf.from_spin1(stot=0, sz=0, n1=0, n2=1)
     end
     ham_spin1_girvin = pfs.projector(singlet)
+    return ham_spin1_girvin
 end
 
 function hamiltonian_aklt_half(hilbert_state; sublattice=nothing, kwargs...)
@@ -82,8 +83,6 @@ function hamiltonian_aklt_half(hilbert_state; sublattice=nothing, kwargs...)
     #return MPO(op1 + op2, hilbert_state), MPO(op1, hilbert_state), MPO(op2, hilbert_state)
     # Use invokelatest to avoid a worldline conflict with pyflexmps
     return Base.invokelatest(MPO, op1 + op2, hilbert_state), Base.invokelatest(MPO, op1, hilbert_state), Base.invokelatest(MPO, op2, hilbert_state)
-
-
 end
 
 end # module

@@ -1,0 +1,10 @@
+name = "pyflexmps"
+uuid = "f8de591d-dcfe-4277-b438-6c2fe39d4e10"
+authors = ["Daniel Alcalde <d.alcalde.puente@fz-juelich.de>"]
+version = "0.1.0"
+
+[deps]
+ITensors = "9136182c-28ba-11e9-034c-db9fb085ebd5"
+PastaQ = "30b07047-aa8b-4c78-a4e8-24d720215c19"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+SymPy = "24249f21-da20-56a4-8eb1-6a02cf4ae2e6"
