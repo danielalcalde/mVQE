@@ -22,7 +22,7 @@ SnoopCompile.@snoopc "./colortypes_compiles.log" begin
     using mVQE.Layers: Rylayer, CXlayer, Rxlayer
     using mVQE.Circuits: runcircuit, VariationalCircuitRy, VariationalMeasurement
     using mVQE: loss, optimize_and_evolve
-    using mVQE.Hamiltonians: hamiltonian_tfi
+    using pyflexmps.Hamiltonians: hamiltonian_tfi
 
     using mVQE.StateFactory: random_MPS, infinite_temp_MPO
     using mVQE.Layers: Rylayer, CXlayer, Rxlayer
