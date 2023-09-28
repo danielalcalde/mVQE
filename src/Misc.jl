@@ -1,5 +1,7 @@
 module Misc
 using JLD2
+using LinearAlgebra
+using Zygote
 using Random
 using Distributed
 using DataStructures: DefaultDict
@@ -212,6 +214,25 @@ function simple_spinhalf_to_spin1_vec(spinhalf_vec)
         end
     end
     return spin1_vec
+end
+
+struct BitStringIterator
+    N::Int
+    current::Int
+end
+
+# Initialize the iterator
+BitStringIterator(N::Int) = BitStringIterator(N, -1)
+
+# Define the start function
+Base.iterate(iter::BitStringIterator, state = 0) = state < 2^iter.N ? (get_bit_string(state, iter.N), state + 1) : nothing
+
+# Function to get the bit string
+function get_bit_string(i, N)
+    return Zygote.@ignore begin 
+        bits = bitstring(i)[end-N+1:end]
+        [parse(Int, b) for b in bits]
+    end
 end
 
 
