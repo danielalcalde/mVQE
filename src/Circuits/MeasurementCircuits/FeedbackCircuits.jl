@@ -90,20 +90,33 @@ end
 
 
 function (model::VariationalMeasurementMCFeedback)(ρ::AbstractMPS;
-    get_loglike=false, get_measurements=false, gradient_averaging=true, kwargs...)
+    get_loglike=false, get_measurements=false, gradient_averaging=true, fake_measurement_feedback=false, kwargs...)
 
     measurements = Matrix{Int16}(undef, length(model.measurement_indices), length(model))
     ρ = model.vcircuits[1](ρ; kwargs...)
-     
-    ρ, m, loglike = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
+    local m, loglike
+    if !fake_measurement_feedback
+        ρ, m, loglike = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
+    else
+        _, m, _ =       projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
+        ρ, _, loglike = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
+    end
+    
     Zygote.@ignore measurements[:, 1] = m .- 1
 
     for (i, vcircuit) in enumerate(model.vcircuits[2:end])
         eltype_ = real(Base.eltype(ρ[1]))
         M = Zygote.@ignore eltype_.(measurements[:, 1:i])
         ρ = vcircuit(ρ, M; kwargs...)
-
-        ρ, m, loglike_ = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
+        
+        local loglike_
+        if !fake_measurement_feedback
+            ρ, m, loglike_ = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
+        else
+            _, m, _ =        projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
+            ρ, _, loglike_ = projective_measurement_sample(ρ; indices=model.measurement_indices, reset=model.reset, get_loglike=true, gradient_averaging)
+        end
+        
         loglike += loglike_
         Zygote.@ignore measurements[:, i+1] = m .- 1
     end

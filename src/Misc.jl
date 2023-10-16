@@ -235,5 +235,17 @@ function get_bit_string(i, N)
     end
 end
 
+# Define getindex
+function Base.getindex(iter::BitStringIterator, i::Int)
+    if i < firstindex(iter) || i > lastindex(iter)
+        throw(BoundsError())
+    end
+    return get_bit_string(i, iter.N)
+end
+
+Base.firstindex(iter::BitStringIterator) = 0
+Base.lastindex(iter::BitStringIterator) = 2^iter.N - 1
+Base.length(iter::BitStringIterator) = 2^iter.N
+Base.size(iter::BitStringIterator) = Tuple(2^iter.N)
 
 end

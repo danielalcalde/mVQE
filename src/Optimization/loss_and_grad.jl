@@ -41,15 +41,26 @@ function loss(ψs::VectorAbstractMPS, H::MPOTypes; kwargs...)
     return E / length(ψs)
 end
 
-function get_loss_and_grad(loss_func::Function; kwargs...)
-    function loss_and_grad(model::AbstractVariationalCircuit)
-        y, ∇ = withgradient(Flux.params(model)) do
-            loss_func(model; kwargs...)
+function get_loss_and_grad(loss_func::Function; isfunctor=true, kwargs...)
+    if isfunctor
+        function loss_and_grad1(model)
+            y, ∇ = withgradient(Flux.params(model)) do
+                loss_func(model; kwargs...)
+            end
+            return [y, ∇]
         end
-        return [y, ∇]
+        return loss_and_grad1
+    else
+        function loss_and_grad2(model)
+            y, (∇,) = withgradient(model) do model
+                loss_func(model)
+            end
+            return [y, ∇]
+        end
+        return loss_and_grad2
     end
-    return loss_and_grad
 end
+
 
 function loss_and_grad(ψs::States, H::MPOTypes, model::AbstractVariationalCircuit; kwargs...)
     y, ∇ = withgradient(Flux.params(model)) do
@@ -76,7 +87,6 @@ function loss_and_grad(ψs::States, H::MPOTypes, model::AbstractVariationalCircu
         var_grad /= sample_nr
         std_grad = sqrt(var_grad - mean_grad * mean_grad)
 
-    
         return mean(losses), std(losses) / sqrt(sample_nr), mean_grad, std_grad
     else
         

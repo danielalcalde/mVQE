@@ -42,6 +42,6 @@ using OptimizersExtension: callback_, optimize
 
 # Module
 include("Optimization/Optimization.jl")
-
+include("ParallelTools/ParallelTools.jl")
 
 end

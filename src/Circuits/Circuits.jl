@@ -14,7 +14,7 @@ using ITensors: AbstractMPS
 
 using ..ITensorsExtension: VectorAbstractMPS, States
 using ..ITensorsMeasurement: projective_measurement, projective_measurement_sample
-using ..Layers: Rxlayer, Rylayer, Rzlayer, CXlayer, CRxlayer
+using ..Layers: Rxlayer, Rylayer, Rzlayer, CXlayer, CRxlayer, BrickLayer
 using ..Layers: ProjectiveMeasurementLayer
 
 # Types
@@ -55,7 +55,7 @@ function get_parameters(model::AbstractVariationalCircuit; params=nothing)
         params = model.params
     end
 
-    N = N = get_N(model)
+    N = get_N(model)
     depth = get_depth(model)
     return params, N, depth
 end

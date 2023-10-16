@@ -26,12 +26,53 @@ function add_identities(H::MPO, hilbert, sites)
 
             new_H = δ(link_original, link_new) * δ(index, index')
         end
-            
-            
+
         insert!(H, site, new_H)
     end
     return MPO(H)
+end
+
+function get_projector(hilbert, ancilla_indices, bit_array::Vector{<:Integer})
+    return Zygote.@ignore begin 
+        state_indices = setdiff(1:length(hilbert), ancilla_indices)
+        ψp_a = productstate(hilbert[ancilla_indices], bit_array)
+        Oψp_a = outer(ψp_a, ψp_a')
+        return add_identities(Oψp_a, hilbert[state_indices], state_indices)
+    end
+end
+
+function get_mapper(hilbert, ancilla_indices, input_bit_array::Vector{<:Integer}, output_bit_array::Vector{<:Integer})
+    return Zygote.@ignore begin 
+        state_indices = setdiff(1:length(hilbert), ancilla_indices)
+        ψp_a = productstate(hilbert[ancilla_indices], input_bit_array)
+        ψp_a2 = productstate(hilbert[ancilla_indices], output_bit_array)
+        Oψp_a = outer(ψp_a, ψp_a2')
+        return add_identities(Oψp_a, hilbert[state_indices], state_indices)
+    end
+end
+
+function add_ancillas(ψ::MPS, hilbert, sites; state=1)
+    @assert length(hilbert) == length(sites)
+    ψ = ψ[:]
+    if state isa Int
+        state = fill(state, length(sites))
+    end
     
+    for (state_i, index, site) in zip(state, hilbert, sites)
+        new_ψ = ITensor(index)
+        new_ψ[index => state_i] = 1.
+
+        if !(site == 1 || site > length(ψ))
+            link_original = commonind(ψ[site-1], ψ[site])
+            link_new = Index(dim(link_original); tags="Link,n=e$site")
+            ψ[site] = ψ[site] * δ(link_original, link_new)
+
+            new_ψ = δ(link_original, link_new) * new_ψ
+        end
+        
+        insert!(ψ, site, new_ψ)
+    end
+    return MPS(ψ)
 end
 
 # Custom @adoints for Zygote

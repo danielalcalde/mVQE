@@ -3,7 +3,7 @@ N = 4
 hilbert = qubits(N)
 ψs = randomMPS(hilbert; linkdims=10)
 ancilla_indices = [1, 3]
-H = MPO(mVQE.Hamiltonians.hamiltonian_tfi(1:N, 0.5), hilbert)
+H = MPO(pyflexmps.Hamiltonians.hamiltonian_tfi(1:N, 0.5), hilbert)
 
 @testset "projective_measurement_sample_psi" begin
     function f1(ψ)
