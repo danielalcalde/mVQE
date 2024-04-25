@@ -26,27 +26,23 @@ function hamiltonian_ghz(state_indices, hilbert)
 end
 
 
-function translate_spinone_to_spinhalf_symb(;base="girvin")
-    spin_trans = Dict()
+function translate_spinone_to_spinhalf_symb(i=0; spin_trans=Dict(), base="girvin")
     if base=="girvin"
-        for i in [0, 2]
-            spin_trans[pfs.KetSpinOne("1", i)] = pfs.KetSpinHalf("-1/2", i)*pfs.KetSpinHalf("1/2", i+1)
-            spin_trans[pfs.KetSpinOne("0", i)] = pfs.KetSpinHalf("1/2", i)*pfs.KetSpinHalf("1/2", i+1)
-            spin_trans[pfs.KetSpinOne("-1", i)] = pfs.KetSpinHalf("1/2", i)*pfs.KetSpinHalf("-1/2", i+1)
-        end
+        spin_trans[pfs.KetSpinOne("1", i)] = pfs.KetSpinHalf("-1/2", i)*pfs.KetSpinHalf("1/2", i+1)
+        spin_trans[pfs.KetSpinOne("0", i)] = pfs.KetSpinHalf("1/2", i)*pfs.KetSpinHalf("1/2", i+1)
+        spin_trans[pfs.KetSpinOne("-1", i)] = pfs.KetSpinHalf("1/2", i)*pfs.KetSpinHalf("-1/2", i+1)
     elseif base == "clebsch"
-        for i in [0, 2]
-            spin_trans[pfs.KetSpinOne("1", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=1, n1=i, n2=i+1)
-            spin_trans[pfs.KetSpinOne("0", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=0, n1=i, n2=i+1)
-            spin_trans[pfs.KetSpinOne("-1", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=-1, n1=i, n2=i+1)
-        end
+        spin_trans[pfs.KetSpinOne("1", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=1, n1=i, n2=i+1)
+        spin_trans[pfs.KetSpinOne("0", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=0, n1=i, n2=i+1)
+        spin_trans[pfs.KetSpinOne("-1", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=-1, n1=i, n2=i+1)
     end
     return spin_trans
 end
 
 function hamiltonian_aklt_half_symb(;kwargs...)
     ham_aklt = 0
-    spin_trans = translate_spinone_to_spinhalf_symb(;kwargs...)
+    spin_trans = translate_spinone_to_spinhalf_symb(0; kwargs...)
+    spin_trans = translate_spinone_to_spinhalf_symb(2; spin_trans, kwargs...)
     for i in -2:2
         state = pfs.KetSpinOne.from_spin2(stot=2, sz=i, n1=0, n2=2)
         state = subs(state, spin_trans)
@@ -79,6 +75,77 @@ function hamiltonian_aklt_half(hilbert_state; sublattice=nothing, kwargs...)
     op1 = convert_sympy_to_opsum(ham_aklt, Vector(1:2:N_state-2); sublattice=sublattice)
     op2 = convert_sympy_to_opsum(ham_spin1, Vector(1:2:N_state); sublattice=sublattice)
 
+    
+    #return MPO(op1 + op2, hilbert_state), MPO(op1, hilbert_state), MPO(op2, hilbert_state)
+    # Use invokelatest to avoid a worldline conflict with pyflexmps
+    return Base.invokelatest(MPO, op1 + op2, hilbert_state), Base.invokelatest(MPO, op1, hilbert_state), Base.invokelatest(MPO, op2, hilbert_state)
+end
+
+# The Haldane phase
+function get_projector_from_spinone_to_spinhalf(i)
+    c = 0
+    for (v, p) in translate_spinone_to_spinhalf_symb(i)
+        c += sympy.adjoint(p)*v
+    end
+    return c
+end
+
+function hamiltonian_haldane_half_symb(θ=atan(1/3); kwargs...)
+    Sx1 = pfs.Spin1("x", 0)
+    Sz1 = pfs.Spin1("z", 0)
+    Sym = [0  1 0;
+           -1 0 1;
+           0 -1 0]
+    Sy1 = -im*sympy.simplify(pfs.Spin1.from_matrix(Sym, 0)/sympy.sqrt(2))
+
+    Sx2 = pfs.Spin1("x", 2)
+    Sz2 = pfs.Spin1("z", 2)
+    Sy2 = -im*sympy.simplify(pfs.Spin1.from_matrix(Sym, 2)/sympy.sqrt(2))
+
+    S1 = [Sx1, Sy1, Sz1]
+    S2 = [Sx2, Sy2, Sz2]
+    
+    # Project to  SpinHalg
+    c0 = get_projector_from_spinone_to_spinhalf(0; kwargs...)
+    c2 = get_projector_from_spinone_to_spinhalf(2; kwargs...)
+
+    conv1 = S -> pfs.quantum_states.convert_ketbra_to_operator(pfs.apply(sympy.adjoint(c0)*S*c0))
+    S1c = conv1.(S1)
+
+    conv2 = S -> pfs.quantum_states.convert_ketbra_to_operator(pfs.apply(sympy.adjoint(c2)*S*c2))
+    S2c = conv2.(S2)
+
+    SS = sum(S1c .* S2c)
+    SS2 = SS * SS
+    id = pfs.sigmaid(0) * pfs.sigmaid(1) * pfs.sigmaid(2) * pfs.sigmaid(3)
+    
+    J = 0.5/cos(atan(1/3))
+    J1, J2 = J * cos(θ), J * sin(θ)
+    #println(" _J1 = $J1, J2=$J2")
+    #H_term = 1/sympy.Number(2) * SS
+    #H_term += 1/sympy.Number(6) * SS2
+
+    H_term = J1 * SS
+    H_term += J2 * SS2
+    H_term += 1/sympy.Number(3) * id
+
+    H_term = pfs.apply(H_term)
+    return H_term
+end
+
+function hamiltonian_haldane_half(hilbert_state, θ=atan(1/3); sublattice=nothing, kwargs...)
+    if sublattice === nothing
+        N_state = length(hilbert_state)
+        sublattice = Vector(1:N_state)
+    else
+        N_state = length(sublattice)
+    end
+    
+    ham_haldane = hamiltonian_haldane_half_symb(θ; kwargs...)
+    ham_spin1 = hamiltonian_aklt_spin1_symb(; kwargs...)
+    
+    op1 = convert_sympy_to_opsum(ham_haldane, Vector(1:2:N_state-2); sublattice=sublattice)
+    op2 = convert_sympy_to_opsum(ham_spin1, Vector(1:2:N_state); sublattice=sublattice)
     
     #return MPO(op1 + op2, hilbert_state), MPO(op1, hilbert_state), MPO(op2, hilbert_state)
     # Use invokelatest to avoid a worldline conflict with pyflexmps

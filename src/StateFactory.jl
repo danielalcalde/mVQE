@@ -1,6 +1,7 @@
 module StateFactory
 using ITensors
 using PastaQ
+using LinearAlgebra
 
 function random_MPS(hilbert, k; ancilla_indices=nothing)
     N = length(hilbert)
@@ -112,6 +113,9 @@ end
 
 function AKLT_half_tensor_girvin(link_1, physical, link_2; location=1, spin_selection=nothing)
     # notebooks/workprojects/tensornetworks/theory/AKLT%20spin%20Half.ipynb
+    # |+> = |10>
+    # |-> = |01>
+    # |0> = |00>
     if location == 1
         @assert link_1.space == 2 && link_2.space == 3 "link_1.space = $(link_1.space), link_2.space = $(link_2.space)"
     else
@@ -204,11 +208,49 @@ end
 """
 Constructs the 4 AKLT states.
 """
-function AKLT_halfs(hilbert; kwargs...)
-    return [AKLT_half([1, 0], [1, 0], hilbert; kwargs...),
+function AKLT_halfs(hilbert; orthogonalize=false, kwargs...)
+    aklts = [AKLT_half([1, 0], [1, 0], hilbert; kwargs...),
             AKLT_half([1, 0], [0, 1], hilbert; kwargs...),
             AKLT_half([0, 1], [1, 0], hilbert; kwargs...),
             AKLT_half([0, 1], [0, 1], hilbert; kwargs...)]
+
+    if orthogonalize
+        r = inner(aklts[1], aklts[4])
+        aklts[1] = +(aklts[1], (-r) * aklts[4]; cutoff=1e-10)
+        aklts[1] =  aklts[1]/norm(aklts[1])
+    end
+    return aklts
 end
+
+# W state
+function W_state_tensor(l, lmax, link1, ph, link2)
+    if l == 1
+        tensor = ITensor(ph, link2)
+        tensor[:] = (I(2).*1.)[:]
+    elseif l==lmax
+        tensor = ITensor(link1, ph)
+        tensor[2, 1] = sqrt((l-1.) / l)
+        tensor[1, 2] = sqrt(1. / l)
+    else
+        tensor = ITensor(link1, ph, link2)
+        tensor[1, 1, 1] = 1.
+        tensor[2, 1, 2] = sqrt((l-1.) / l)
+        tensor[1, 2, 2] = sqrt(1. / l)
+        
+    end
+    return tensor
+end
+
+function W_state(hilbert)
+    N = length(hilbert)
+    links = [Index(2, "Link,n=$i") for i in 1:N]
+    tensors = [W_state_tensor(li, N, links[mod1(li-1, N)], hilbert[li], links[mod1(li, N)]) for li in 1:N]
+    ψ = MPS(tensors)
+    orthogonalize!(ψ, 1)
+    ψ[1] /= norm(ψ[1])
+    return ψ
+end
+
+
 # end module
 end

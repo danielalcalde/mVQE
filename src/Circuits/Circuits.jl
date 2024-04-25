@@ -7,6 +7,7 @@ using OptimKit
 using Zygote
 using Statistics
 using Flux
+
 import Base
 import ITensorsExtensions
 
@@ -14,13 +15,15 @@ using ITensors: AbstractMPS
 
 using ..ITensorsExtension: VectorAbstractMPS, States
 using ..ITensorsMeasurement: projective_measurement, projective_measurement_sample
-using ..Layers: Rxlayer, Rylayer, Rzlayer, CXlayer, CRxlayer, BrickLayer
+using ..Layers: Rxlayer, Rylayer, Rzlayer, CXlayer, CRxlayer, BrickLayer, OneGateLayer, Ulayer, CUlayer, CUlayer_broken, CX_Idlayer
 using ..Layers: ProjectiveMeasurementLayer
 
 # Types
 CircuitType = Vector{Tuple}
+abstract type AbstractCircuit end
 
-abstract type AbstractVariationalCircuit end
+
+abstract type AbstractVariationalCircuit <: AbstractCircuit end
 
 function Base.size(model::AbstractVariationalCircuit)
     throw("Size not defined for $(typeof(model)). This should be the size of the parameters.")
@@ -46,8 +49,8 @@ function get_N(model::AbstractVariationalCircuit)
 end
 
 Flux.trainable(model::AbstractVariationalCircuit) = (model.params,)
-
-Base.show(io::IO, c::AbstractVariationalCircuit) = print(io, "$(typeof(c))(N=$(get_N(c)), depth=$(get_depth(c)))")
+number_of_parameters(model::AbstractVariationalCircuit) = sum([length(p[:]) for p in Flux.params(model)]; init=0)
+Base.show(io::IO, c::AbstractVariationalCircuit) = print(io, "$(typeof(c))(N=$(get_N(c)), depth=$(get_depth(c)); Nₚ=$(number_of_parameters(c)))")
 
 function get_parameters(model::AbstractVariationalCircuit; params=nothing)
     if params === nothing
@@ -93,6 +96,25 @@ get_depth(model::IdentityCircuit) = 0
 
 (model::IdentityCircuit)(ρ::States; kwargs...) = ρ
 Flux.trainable(::IdentityCircuit) = ()
+
+function select_params(params, model_params)
+    if params === nothing
+        return model_params
+    end
+    @assert length(params) == length(model_params) "Number of parameters must match number of qubits in the layer"
+    return params
+end
+
+mutable struct NonVariaitonalCircuit <: AbstractVariationalCircuit
+    circuit::CircuitType
+end
+get_N(model::NonVariaitonalCircuit) = 0
+get_depth(model::NonVariaitonalCircuit) = length(model.circuit)
+get_parameters(model::NonVariaitonalCircuit; params=nothing) = nothing, 0, length(model.circuit)
+Flux.trainable(::NonVariaitonalCircuit) = ()
+function generate_circuit!(circuit, model::NonVariaitonalCircuit; kwargs...)
+    return vcat(circuit, model.circuit)
+end
 
 
 include("VariationalCircuitComposed.jl")

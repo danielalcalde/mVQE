@@ -1,14 +1,25 @@
-struct ReshapeModel
+mutable struct ReshapeModel
     model
     output_shape
+    input_shape
+    ReshapeModel(model, output_shape, input_shape=(:,)) = new(model, output_shape, input_shape)
 end
 Flux.@functor ReshapeModel
 Flux.trainable(a::ReshapeModel) = (a.model,)
 
-function (f::ReshapeModel)(input; kwargs...)
-    o = f.model(input[:]; kwargs...)
-    @assert length(o) == prod(f.output_shape) "ReshapeModel: Output shape $(size(o)) does not match $(f.output_shape)"
-    return reshape(o, f.output_shape)
+function (f::ReshapeModel)(input; batched=false, kwargs...)
+    input_shape = f.input_shape
+    output_shape = f.output_shape
+    if batched
+        batch_dim = size(input)[end]
+        input_shape = (input_shape..., batch_dim)
+        output_shape = (output_shape..., batch_dim)
+    end
+    
+    input = reshape(input, input_shape)
+    output = f.model(input; kwargs...)
+
+    return reshape(output, output_shape)
 end
 
 

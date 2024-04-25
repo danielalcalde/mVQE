@@ -6,7 +6,7 @@ Flux.@functor FeedbackCircuit
 Flux.trainable(a::FeedbackCircuit) = (a.model,)
 Base.show(io::IO, model::FeedbackCircuit) = print(io, "FeedbackCircuit(\n ", model.vcircuit, ",\n ", model.model, ")")
 
-function FeedbackCircuit(vcircuit, model, input_shape)
+function FeedbackCircuit(vcircuit, model, input_shape; size_independent=false)
     output_shape = vector_size(vcircuit)
     
     input_dims = prod(input_shape)
@@ -14,6 +14,10 @@ function FeedbackCircuit(vcircuit, model, input_shape)
     if output_shape isa Vector
         output_dims = prod(output_shape)
         model = model(input_dims, output_dims)
+        if size_independent
+            # assume first dimension is the system size
+            output_shape = (:, output_shape[2:end]...)
+        end
         model = ReshapeModel(model, Tuple(output_shape))
 
     elseif output_shape isa Tuple # Nested tuple
@@ -72,7 +76,7 @@ model = VariationalMeasurementMCFeedback(vcircuits, feedback_models, measurement
 ```
 """
 function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models::Vector, measurement_indices:: Vector{<:Integer};
-                                          reset::Union{Nothing, Integer}=1) where T <: AbstractVariationalCircuit
+                                          reset::Union{Nothing, Integer}=1, size_independent=false) where T <: AbstractVariationalCircuit
     # Initialize feedback models
     N_measurements = length(measurement_indices)
     @assert length(feedback_models) == length(vcircuits) - 1
@@ -82,7 +86,7 @@ function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models:
 
     for (i, model) in enumerate(feedback_models)
         input_shape = (i, N_measurements)
-        vcircuits_new[i+1] = FeedbackCircuit(vcircuits[i + 1], model, input_shape)
+        vcircuits_new[i+1] = FeedbackCircuit(vcircuits[i + 1], model, input_shape; size_independent)
     end
 
     return VariationalMeasurementMCFeedback(vcircuits_new, measurement_indices, reset)

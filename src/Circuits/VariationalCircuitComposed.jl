@@ -2,9 +2,9 @@
 struct VariationalCircuitComposed <: AbstractVariationalCircuit
     circuits::Vector{AbstractVariationalCircuit}
     function VariationalCircuitComposed(circuits::Vector{T}) where T <: AbstractVariationalCircuit
-        for circuit in circuits
-            @assert get_N(circuit) == get_N(circuits[1]) "All circuits must have the same number of qubits"
-        end
+        #for circuit in circuits
+        #    @assert get_N(circuit) == get_N(circuits[1]) "All circuits must have the same number of qubits"
+        #end
         new(circuits)
     end
 end
@@ -13,18 +13,59 @@ Base.size(model::VariationalCircuitComposed) = collect(size(model.circuits[i]) f
 Base.size(model::VariationalCircuitComposed, i::Int) = size(model.circuits[i])
 get_N(model::VariationalCircuitComposed) = get_N(model.circuits[1])
 get_depth(model::VariationalCircuitComposed) = sum(get_depth(circ) for circ in model.circuits)
+Flux.trainable(model::VariationalCircuitComposed) = (circ for circ in model.circuits)
 
-function generate_circuit(model::VariationalCircuitComposed; params=nothing)
+function (model::VariationalCircuitComposed)(ρ::States; params=nothing, eltype=nothing, kwargs...)
     if params === nothing
         params = [nothing for _ in model.circuits]
     else
         @assert length(params) == length(model.circuits) "Number of parameters must match number of circuits"
     end
 
-    circuit = Tuple[]
-
-    for (i, circ) in enumerate(model.circuits)
-        circuit = vcat(circuit, generate_circuit(circ; params=params[i]))
+    for (i, circuit) in enumerate(model.circuits)
+        ρ = circuit(ρ; params=params[i], eltype=eltype, kwargs...)
     end
-    return circuit
+    return ρ
+end
+
+abstract type AbstractVariationalLayer <: AbstractVariationalCircuit end
+Base.size(model::AbstractVariationalLayer) = size(model.params)
+Base.size(model::AbstractVariationalLayer, i::Int) = size(model.params, i)
+get_N(model::AbstractVariationalLayer) = length(model.sites)
+get_depth(model::AbstractVariationalLayer) = 1
+
+struct VariationalOneQubit{T <: Number} <: AbstractVariationalLayer
+    sites::Vector{<:Integer}
+    params::Vector{T}
+    gate_type::String
+end
+Flux.@functor VariationalOneQubit
+
+function VariationalOneQubit(N::Integer; gate_type="Ry", sites=1:N)
+    @assert N == length(sites) "Number of sites must match number of qubits"
+    params = 2π .* rand(N) .- π
+    return VariationalOneQubit(collect(sites), params, gate_type)
+end
+
+function generate_circuit!(circuit, model::VariationalOneQubit; params=nothing, N::Integer, depth::Integer)
+    params = select_params(params, model.params)
+    return vcat(circuit, OneGateLayer(params; sites=model.sites, gate=model.gate_type))
+end
+
+struct VariationalTwoQubit{T <: Number} <: AbstractVariationalLayer
+    sites::Vector{<:Integer}
+    params::Vector{T}
+    gate_type::String
+end
+
+function VariationalTwoQubit(N::Integer; gate_type="CX_Id", sites=1:N)
+    @assert N == length(sites) "Number of sites must match number of qubits"
+    @assert N % 2 == 0 "Number of qubits must be even"
+    params = 2π .* rand(N÷2) .- π
+    return VariationalTwoQubit(collect(sites), params, gate_type)
+end
+
+function generate_circuit!(circuit, model::VariationalTwoQubit; params=nothing, N::Integer, depth::Integer)
+    params = select_params(params, model.params)
+    return vcat(circuit, BrickLayer(N, 1, params; gate=model.gate_type, sites=model.sites))
 end

@@ -44,4 +44,7 @@ using OptimizersExtension: callback_, optimize
 include("Optimization/Optimization.jl")
 include("ParallelTools/ParallelTools.jl")
 
+using JLD2
+include("JLD2_compatibility.jl")
+
 end

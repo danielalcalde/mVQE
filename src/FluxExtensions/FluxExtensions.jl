@@ -1,6 +1,7 @@
 module FluxExtensions
 using Flux
 using Zygote
+using Statistics
 
 
 include("models.jl")

@@ -220,4 +220,95 @@ function Circuits.generate_circuit(c::VariationalCircuitTwoQubitGateGirvinCorr; 
 end
 
 
+struct VariationalCircuitTwoQubitGateGirvinCorrReducedParams <: AbstractVariationalCircuit
+    params::Array{Float64, 3}
+    gate_type::String
+    state_indices::Union{Vector{<:Integer}, Nothing}
+    function VariationalCircuitTwoQubitGateGirvinCorrReducedParams(params::Array{Float64, 3}; gate_type="CX_Id", state_indices=nothing)
+        @warn "This type is deprecated use VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr instead."
+        new(params, gate_type, state_indices)
+    end
+end
+VariationalCircuitTwoQubitGateGirvinCorrReducedParams(N::Int, depth::Int; kwargs...) = VariationalCircuitTwoQubitGateGirvinCorrReducedParams(2π .* rand(N ÷ 2, 3, depth) .- π; kwargs...)
+VariationalCircuitTwoQubitGateGirvinCorrReducedParams(; kwargs...) = VariationalCircuitTwoQubitGateGirvinCorrReducedParams(Array{Float64, 3}(undef, 0, 0, 0); kwargs...) # Empty circuit to be used as a placeholder
+
+Flux.@functor VariationalCircuitTwoQubitGateGirvinCorrReducedParams
+Base.size(model::VariationalCircuitTwoQubitGateGirvinCorrReducedParams) = size(model.params)
+Base.size(model::VariationalCircuitTwoQubitGateGirvinCorrReducedParams, i::Int) = size(model.params, i)
+Circuits.get_depth(model::VariationalCircuitTwoQubitGateGirvinCorrReducedParams) = size(model.params, 3)
+Circuits.get_N(model::VariationalCircuitTwoQubitGateGirvinCorrReducedParams) = size(model.params, 1) * 2
+Flux.trainable(a::VariationalCircuitTwoQubitGateGirvinCorrReducedParams) = (a.params,)
+
+
+function Circuits.generate_circuit(c::VariationalCircuitTwoQubitGateGirvinCorrReducedParams; params=nothing)
+    if params === nothing
+        params = c.params
+    end
+    @assert size(params, 2) == 3
+    N = size(params, 1) * 2
+    depth = size(params, 3)
+
+    local state_indices
+    if c.state_indices === nothing
+        state_indices, = Zygote.@ignore get_ancilla_indices(N, [false, true, true, true, true, false])
+    else
+        state_indices = c.state_indices
+        @assert length(state_indices) == N
+    end
+    
+    circuit = Vector()
+    for d in 1:depth
+        params_ry_layer = params[:, 1:2, d]
+
+        circuit = vcat(circuit, Layers.Rylayer(params_ry_layer[:]; sites=state_indices))
+        circuit = vcat(circuit, Layers.BrickLayer(N, 1, params[:, 3, d]; gate=c.gate_type, sites=state_indices))
+    end
+    return circuit
+end
+
+"Same as `VariationalCircuitTwoQubitGateGirvinCorrReducedParams` but with the right parameter order"
+struct VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr <: AbstractVariationalCircuit
+    params::Array{Float64, 3}
+    gate_type::String
+    state_indices::Union{Vector{<:Integer}, Nothing}
+    VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr(params::Array{Float64, 3}; gate_type="CX_Id", state_indices=nothing) = new(params, gate_type, state_indices)
+end
+VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr(N::Int, depth::Int; kwargs...) = VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr(2π .* rand(N ÷ 2, 3, depth) .- π; kwargs...)
+VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr(; kwargs...) = VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr(Array{Float64, 3}(undef, 0, 0, 0); kwargs...) # Empty circuit to be used as a placeholder
+
+Flux.@functor VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr
+Base.size(model::VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr) = size(model.params)
+Base.size(model::VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr, i::Int) = size(model.params, i)
+Circuits.get_depth(model::VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr) = size(model.params, 3)
+Circuits.get_N(model::VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr) = size(model.params, 1) * 2
+Flux.trainable(a::VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr) = (a.params,)
+
+
+function Circuits.generate_circuit(c::VariationalCircuitTwoQubitGateGirvinCorrReducedParamsCorr; params=nothing)
+    if params === nothing
+        params = c.params
+    end
+    @assert size(params, 2) == 3
+    N = size(params, 1) * 2
+    depth = size(params, 3)
+
+    local state_indices
+    if c.state_indices === nothing
+        state_indices, = Zygote.@ignore get_ancilla_indices(N, [false, true, true, true, true, false])
+    else
+        state_indices = c.state_indices
+        @assert length(state_indices) == N
+    end
+    
+    circuit = Vector()
+    for d in 1:depth
+        params_ry_layer = transpose(params[:, 1:2, d])[:]
+
+        circuit = vcat(circuit, Layers.Rylayer(params_ry_layer; sites=state_indices))
+        circuit = vcat(circuit, Layers.BrickLayer(N, 1, params[:, 3, d]; gate=c.gate_type, sites=state_indices))
+    end
+    return circuit
+end
+
+
 end # module

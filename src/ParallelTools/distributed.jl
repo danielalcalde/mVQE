@@ -64,8 +64,6 @@ function preduce2(reducer, f, R)
     reduce(reducer, Any[fetch(t) for t in w_exec])
 end
 
-using Distributed: splitrange
-
 macro distributed_map(loop)
     if !isa(loop,Expr) || loop.head !== :for
         error("malformed @distributed loop")

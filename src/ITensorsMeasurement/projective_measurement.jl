@@ -17,7 +17,7 @@ function projective_measurement_gate(s; reset=nothing)
 end
 
 
-function ITensors.tr(ρ::MPO, indices::Vector{<:Integer})
+function ITensors.tr(ρ::MPO, indices::AbstractVector{<:Integer})
     N = length(ρ)
     
     ρ_tensors = ITensor[]
@@ -52,7 +52,7 @@ function ITensors.tr(ρ::MPO, indices::Vector{<:Integer})
     return MPO(ρ_tensors)
 end
 
-ITensors.tr(ψ::MPS, indices::Vector{<:Integer}) = ITensors.tr(outer(ψ, ψ'), indices)
+ITensors.tr(ψ::MPS, indices::AbstractVector{<:Integer}) = ITensors.tr(outer(ψ, ψ'), indices)
 
 function projective_measurement(ρ::MPO; indices=1:length(ρ), reset=nothing)
     N = length(ρ)

@@ -1,6 +1,10 @@
 module Layers
+using Zygote
 
-OneGateLayer(θ; offset=0, gate="Ry", sites=1:length(θ)) = [(gate, sites[i] + offset, (θ = θi,)) for (i, θi) in enumerate(θ)]
+function OneGateLayer(θ; offset=0, gate="Ry", sites=1:length(θ))
+    @assert length(θ) + offset <= length(sites) "Number of parameters must match number of qubits in the layer (param_size=$(length(θ)), qubits=$(length(sites)))"
+    return [(gate, sites[i + offset], (θ = θi,)) for (i, θi) in enumerate(θ)]
+end
 
 Rzlayer(θ; kwargs...) = OneGateLayer(θ; kwargs..., gate="Rz")
 Rylayer(θ; kwargs...) = OneGateLayer(θ; kwargs..., gate="Ry")
@@ -36,14 +40,42 @@ function CUlayer_broken(N, Π, θs; broken=6)
 end
 
 # brick-layer of CX gates
-function CXlayer(N, Π; offset=0, reverse=false)
+function CXlayer(N, Π; offset=0, reverse=false, periodic=false, sites=1:N, holes=Int[])
+return Zygote.ignore() do
     start = isodd(Π) ? 1 : 2
     start += offset
-    if reverse
-        return [("CX", (j+1, j)) for j in start:2:(N - 1)]
+    local f, Nmax
+    if periodic
+        f = j-> sites[mod1(j, N)]
+        Nmax = N
+    else
+        f = j->sites[j]
+        Nmax = N - 1
     end
-    return [("CX", (j, j + 1)) for j in start:2:(N - 1)]
+    
+    layer = Tuple[]
+    for j in start:2:Nmax
+        if reverse
+            t = ("CX", (f(j+1), f(j)))
+        else
+            t = ("CX", (f(j), f(j+1)))
+        end
+        # If there are holes between j and j+1, skip the gate
+        if ! any(j .< holes .< (j + 1)) 
+            push!(layer, t)
+        end
+    end
+    return layer
 end
+end
+
+
+BellGate(i0, i1) = [("CX", (i1, i0)), ("H", i1)]
+function BellGateLayer(N; sites=1:N)
+    @assert N % 2 == 0 "Number of qubits must be even"
+    return vcat([BellGate(sites[i], sites[i + 1]) for i in 1:2:length(sites)]...)
+end
+
 
 # Projective measurement Layer
 ProjectiveMeasurementLayer(indices, reset_state) = [("reset", i, (state=reset_state,)) for i in indices]

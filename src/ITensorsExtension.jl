@@ -15,16 +15,18 @@ function add_identities(H::MPO, hilbert, sites)
     H = H[:]
     
     for (index, site) in zip(hilbert, sites)
-        local new_H
+        new_H = δ(index, index')
         
-        if site == 1 || site > length(H)
-            new_H = δ(index, index')
-        else
+        if !(site == 1 || site > length(H))
             link_original = commonind(H[site-1], H[site])
-            link_new = Index(dim(link_original); tags="Link,n=e$site")
-            H[site] = H[site] * δ(link_original, link_new)
+            if link_original !== nothing
+                link_new = Index(dim(link_original); tags="Link,n=e$site")
+                H[site] = H[site] * δ(link_original, link_new)
 
-            new_H = δ(link_original, link_new) * δ(index, index')
+                new_H = δ(link_original, link_new) * new_H
+            else
+                @assert length(inds(H[site-1])) == 2
+            end
         end
 
         insert!(H, site, new_H)
