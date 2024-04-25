@@ -93,6 +93,19 @@ function update_cache!(cx, Δx, x)
     return cx
 end
 
+function update_context!(cx, contexts; params)
+    for c in contexts
+        for (i, p) in enumerate(params)
+            if !(p in keys(cx.cache)) || cx.cache[p] === nothing
+                cx.cache[p] = c[i]
+            else
+                # Add the gradients
+                cx.cache[p] .+= c[i]
+            end
+        end
+    end
+end
+
 function pmap_diff(f, iter)
     @distributed_map for i in iter
         f(i)
@@ -107,30 +120,58 @@ function ∇pmap_diff(cx, f::F, args::Vararg{Any, N}) where {F, N}
         end
         pmap_diff_pull_dict[$key] = Dict()
     end
+    cx_type = typeof(cx).parameters[1]
+
+    params = Flux.params()
+    if cx_type == true
+        ext = Tuple(getfield(f, s) for s in fieldnames(typeof(f)))
+        params = Flux.params(ext)
+    end
     
-    ys = @distributed_map for args_i = args[1]
-        cxi = Zygote.Context()
+    ys = @distributed_map for args_i in args[1]
+        local cxi
+        if cx_type == false
+            cxi = Zygote.Context{false}()
+        else
+            cxi = Zygote.Context{true}(nothing)
+        end
         y, back = Zygote._pullback(cxi, f, args_i)
-        Main.pmap_diff_pull_dict[key][args_i] = back
+        Main.pmap_diff_pull_dict[key][args_i] = (back, cxi, params)
         y
     end
     arg_ax = map(_tryaxes, args)
     
     function map_back(Δ)
-        
-        Δf_and_args_zipped = @distributed_map for (args_i, δ) = Tuple(zip(_tryreverse(pmap_diff, args[1], Δ)...))
-            Main.pmap_diff_pull_dict[key][args_i](δ)
+        Δf_and_args_zipped_and_context = @distributed_map for (args_i, δ) = Tuple(zip(_tryreverse(pmap_diff, args[1], Δ)...))
+            back, cxi, params = Main.pmap_diff_pull_dict[key][args_i]
+            for p in params
+                cxi.cache[p] = nothing
+            end
+            b = back(δ)
+            
+            cx_p = Vector{Any}(undef, length(params))
+            for (i, p) in enumerate(params)
+                cx_p[i] = cxi.cache[p]
+            end
+            (b, cx_p)
         end
         @everywhere @eval Main delete!(pmap_diff_pull_dict, $key)
+        Δf_and_args_zipped = map(x -> x[1], Δf_and_args_zipped_and_context)
         
         Δf_and_args = _unzip(_tryreverse(pmap_diff, Δf_and_args_zipped), Val(N + 1))
         Δf = reduce(accum, Δf_and_args[1]; init=nothing)
         Δargs = map(_restore, Δf_and_args[2:end], arg_ax)
         
-        for s in keys(Δf)
-            if isdefined(f, s)
-                update_cache!(cx, getfield(Δf, s), getfield(f, s))
-            end
+        # Old fix for updating context cache
+        #for s in keys(Δf)
+        #    if isdefined(f, s)
+        #        update_cache!(cx, getfield(Δf, s), getfield(f, s))
+        #    end
+        #end
+        # New fix for updating context cache
+        contexts = map(x->x[2], Δf_and_args_zipped_and_context)
+        if cx_type == true
+            update_context!(cx, contexts; params)
         end
 
         (Δf, Δargs...)
