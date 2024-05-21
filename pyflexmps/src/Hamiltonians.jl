@@ -44,9 +44,10 @@ function hamiltonian_aklt_half_symb(;kwargs...)
     spin_trans = translate_spinone_to_spinhalf_symb(0; kwargs...)
     spin_trans = translate_spinone_to_spinhalf_symb(2; spin_trans, kwargs...)
     for i in -2:2
-        state = pfs.KetSpinOne.from_spin2(stot=2, sz=i, n1=0, n2=2)
+        state = Sym(pfs.KetSpinOne.from_spin2(stot=2, sz=i, n1=0, n2=2))
         state = subs(state, spin_trans)
-        ham_aklt += pfs.projector(state)
+
+        ham_aklt += pfs.projector(state.o)
     end
     return ham_aklt
 end
