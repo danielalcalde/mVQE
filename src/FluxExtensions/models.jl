@@ -20,6 +20,24 @@ function (f::TabularModel)(input)
     return f.params[i]
 end
 
+struct LeftTabularModel
+    models::Tuple
+    offset::Integer
+    LeftTabularModel(x, y; offset=0) = new(Tuple(TabularModel(min(i+offset,x), y) for i in 1:x), offset)
+end
+Base.length(f::LeftTabularModel) = length(f.models)
+Flux.@functor LeftTabularModel
+
+function (f::LeftTabularModel)(input::Vector)
+    x = length(f)
+    out_vecs = Tuple(f.models[i](input[1:min(i+f.offset,x)]) for i in 1:x)
+    out = hcat(out_vecs...)
+    return transpose(out)
+end
+
+function (f::LeftTabularModel)(input::Matrix)
+    return reshape(hcat(Tuple(f(input[:,i]) for i in 1:size(input, 2))...), size(input, 1), :, size(input, 2))
+end
 struct BiasModel
     bias::Vector{Float64}
 end
@@ -29,7 +47,34 @@ Flux.trainable(m::BiasModel) = (m.bias,)
 
 (f::BiasModel)(input; kwargs...) = f.bias
 
+# struct SwiGlu 
+struct SwiGlu
+    model_in
+    model_glue
+    model_out
+end
+Flux.@functor SwiGlu
 
+function SwiGlu(ds::Pair{<:Integer,<:Integer}, hidden_dim::Integer;
+    model_in=Dense(ds[1] => hidden_dim),
+    model_glue=Dense(ds[1] => hidden_dim),
+    model_out=Dense(hidden_dim => ds[2])
+    )
+
+    return SwiGlu(model_in, model_glue, model_out)
+end
+
+function (self::SwiGlu)(input; kwargs...)
+    swi = swish(self.model_in(input))
+    x_V = self.model_glue(input)
+    x = x_V .* swi
+    x = self.model_out(x)
+end
+
+
+getproperty(x::SwiGlu, f::Symbol) = getfield(x.model_glue, f)
+
+# struct ResConnection
 ResConnection(block, act=x->x) = SkipConnection(block, (x, mx) -> act.((x + mx)))
 
 function resnet_block_conv(ch_in, act; size=3, ch_middle=ch_in, kwargs...)
