@@ -45,6 +45,7 @@ return Zygote.ignore() do
     start = isodd(Π) ? 1 : 2
     start += offset
     local f, Nmax
+    N = length(sites)
     if periodic
         f = j-> sites[mod1(j, N)]
         Nmax = N
@@ -61,7 +62,7 @@ return Zygote.ignore() do
             t = ("CX", (f(j), f(j+1)))
         end
         # If there are holes between j and j+1, skip the gate
-        if ! any(j .< holes .< (j + 1)) 
+        if ! any(f(j) .< holes .< f(j + 1)) 
             push!(layer, t)
         end
     end

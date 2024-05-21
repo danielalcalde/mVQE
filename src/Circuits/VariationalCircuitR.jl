@@ -36,12 +36,14 @@ abstract type AbstractVariationalCircuitRy{T<:Number} <: AbstractVariationalCirc
 struct VariationalCircuitRy{T <: Number} <: AbstractVariationalCircuitRy{T}
     params::Matrix{T}
     holes::Vector{Float64} # Holes in the connection of the circuit
-    VariationalCircuitRy(params::Matrix{T}; holes=Float64[]) where T <: Number = new{T}(params, holes)
-    function VariationalCircuitRy(N::Int, depth::Int; eltype=Float64, holes=Float64[], holes_frequency=0)
+    sites::Vector{Int}
+    VariationalCircuitRy(params::Matrix{T}; holes=Float64[], sites=collect(1:size(params))) where T <: Number = new{T}(params, holes, sites)
+    function VariationalCircuitRy(N::Int, depth::Int; eltype=Float64, holes=Float64[], sites=collect(1:N), holes_frequency=0)
+        
         if isempty(holes) && holes_frequency > 0
-            holes = collect(holes_frequency:holes_frequency:N) .+ 0.5
+            holes = sites[collect(holes_frequency:holes_frequency:length(sites))] .+ 0.5
         end
-        new{eltype}(2π .* rand(N, depth) .- π, holes)
+        new{eltype}(2π .* rand(N, depth) .- π, holes, sites)
     end
     VariationalCircuitRy() = new{Float64}(Matrix{Float64}(undef, 0, 0), Int[]) # Empty circuit to be used as a placeholder
 end
@@ -51,18 +53,19 @@ Base.size(model::AbstractVariationalCircuitRy, i::Int) = size(model.params, i)
 get_depth(model::AbstractVariationalCircuitRy) = size(model.params, 2)
 get_N(model::AbstractVariationalCircuitRy) = size(model.params, 1)
 get_holes(model::AbstractVariationalCircuitRy) = model.holes
+get_sites(model::AbstractVariationalCircuitRy) = model.sites
 
 function (model::AbstractVariationalCircuitRy{T})(ρ::States; params=nothing, eltype=nothing, kwargs...) where T <: Number
     params, N, depth = get_parameters(model; params=params)
     for d in 1:depth-1
         
-        circ = Rylayer(params[:, d])
+        circ = Rylayer(params[:, d]; sites=model.sites)
         ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, eltype=T, kwargs...)
 
-        circ = CXlayer(N, d+1; holes=get_holes(model))
+        circ = CXlayer(N, d+1; holes=get_holes(model), sites=model.sites)
         ρ = ITensorsExtensions.runcircuit(ρ, circ; gate_grad=false, eltype=T, kwargs...)
     end
-    circ = Rylayer(params[:, depth])
+    circ = Rylayer(params[:, depth]; sites=model.sites)
     ρ = ITensorsExtensions.runcircuit(ρ, circ; onequbit_gates=true, eltype=T, kwargs...)
     return ρ
 end
@@ -72,9 +75,10 @@ mutable struct VariationalCircuitRyPeriodic{T <: Number} <: AbstractVariationalC
     params::Matrix{T}
     N::Int
     holes_frequency::Int
-    VariationalCircuitRyPeriodic(params::Matrix{T}, N; holes_frequency=0) where T <: Number = new{T}(params, N, holes_frequency)
-    VariationalCircuitRyPeriodic(N::Int, period::Int, depth::Int; eltype=Float64, holes_frequency=0) = new{eltype}(2π .* rand(period, depth) .- π, N, holes_frequency)
-    VariationalCircuitRyPeriodic() = new{Float64}(Matrix{Float64}(undef, 0, 0), 0, 0) # Empty circuit to be used as a placeholder
+    sites::Vector{Int}
+    VariationalCircuitRyPeriodic(params::Matrix{T}, N; holes_frequency=0, sites=collect(1:N)) where T <: Number = new{T}(params, N, holes_frequency, sites)
+    VariationalCircuitRyPeriodic(N::Int, period::Int, depth::Int; eltype=Float64, holes_frequency=0, sites=collect(1:N)) = new{eltype}(2π .* rand(period, depth) .- π, N, holes_frequency, sites)
+    VariationalCircuitRyPeriodic() = new{Float64}(Matrix{Float64}(undef, 0, 0), 0, 0, Int[]) # Empty circuit to be used as a placeholder
 end
 Flux.@functor VariationalCircuitRyPeriodic
 get_N(model::VariationalCircuitRyPeriodic) = model.N
@@ -84,6 +88,9 @@ function get_holes(model::VariationalCircuitRyPeriodic)
     else
         return collect(model.holes_frequency:model.holes_frequency:model.N) .+ 0.5
     end
+end
+function get_sites(model::VariationalCircuitRyPeriodic)
+    return model.sites
 end
 
 function get_parameters(model::VariationalCircuitRyPeriodic; params=nothing)

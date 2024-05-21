@@ -134,28 +134,38 @@ Flux.trainable(::GirvinCorrectionNetwork) = ()
 
 function (t::GirvinCorrectionNetwork)(M::Vector{T}) where T <: Real
     Zygote.@ignore begin
-    correction_gates_params = Dict()  
-    correction_gates_params[Vector{T}([0, 0])] = [pi/2, pi/2, pi/2, 0]
-    correction_gates_params[Vector{T}([0, 1])] = [0, 0, 0, pi]
-    correction_gates_params[Vector{T}([1, 0])] = [pi/2, pi/2, pi/2, pi]
-    correction_gates_params[Vector{T}([1, 1])] = [0, 0, 0, 0]
+        correction_gates_params = Dict()  
+        correction_gates_params[Vector{T}([0, 0])] = [pi/2, pi/2, pi/2, 0]
+        correction_gates_params[Vector{T}([0, 1])] = [0, 0, 0, pi]
+        correction_gates_params[Vector{T}([1, 0])] = [pi/2, pi/2, pi/2, pi]
+        correction_gates_params[Vector{T}([1, 1])] = [0, 0, 0, 0]
 
-    Ns_spin1 = length(M)
-    M = M[2:end-1]
-    
-    @assert mod(length(M), 2) == 0 "M must have even length (got $(length(M)))"
-    
-    M = reshape(M, (2, Int(length(M)/2)))'
-    angles = zeros((Ns_spin1, 4))
-    for i in 1:size(M, 1)
-        Mi = M[i, :]
-        g = correction_gates_params[Mi]
-        for j in 1:2i
-            angles[j, :] = add(angles[j, :], g)
+        Ns_spin1 = length(M)
+        M = M[2:end-1]
+        
+        @assert mod(length(M), 2) == 0 "M must have even length (got $(length(M)))"
+        
+        M = reshape(M, (2, Int(length(M)/2)))'
+        angles = zeros((Ns_spin1, 4))
+        for i in 1:size(M, 1)
+            g = correction_gates_params[M[i, :]]
+            for j in 1:2i
+                angles[j, :] = add(angles[j, :], g)
+            end
         end
+        return angles
     end
-    return angles
 end
+
+function (t::GirvinCorrectionNetwork)(M::Matrix{T}) where T <: Real
+    return Zygote.@ignore begin
+        L, k = size(M)
+        y_tar = zeros(L, 4, k)
+        for i in 1:k
+            y_tar[:, :, i] = t(M[:, i])
+        end
+        return y_tar
+    end
 end
 
 function GirvinMCFeedback(N_state::Int, ancilla_indices::Vector{<:Integer})

@@ -76,7 +76,7 @@ model = VariationalMeasurementMCFeedback(vcircuits, feedback_models, measurement
 ```
 """
 function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models::Vector, measurement_indices:: Vector{<:Integer};
-                                          reset::Union{Nothing, Integer}=1, size_independent=false) where T <: AbstractVariationalCircuit
+                                          reset::Union{Nothing, Integer}=1, size_independent=false, markovian=false) where T <: AbstractVariationalCircuit
     # Initialize feedback models
     N_measurements = length(measurement_indices)
     @assert length(feedback_models) == length(vcircuits) - 1
@@ -85,7 +85,11 @@ function VariationalMeasurementMCFeedback(vcircuits::Vector{T}, feedback_models:
     vcircuits_new[1] = vcircuits[1]
 
     for (i, model) in enumerate(feedback_models)
-        input_shape = (i, N_measurements)
+        if markovian
+            input_shape = (1, N_measurements,)
+        else
+            input_shape = (i, N_measurements)
+        end
         vcircuits_new[i+1] = FeedbackCircuit(vcircuits[i + 1], model, input_shape; size_independent)
     end
 

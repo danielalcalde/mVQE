@@ -1,6 +1,6 @@
 module MPOExtensions
 using ITensors
-using ITensors: terms, sortmergeterms, which_op, site, params
+using ITensors: terms, which_op, site, params
 using ITensors: AbstractMPS
 
 # Fake until implement

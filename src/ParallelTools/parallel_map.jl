@@ -100,7 +100,9 @@ function update_context!(cx, contexts; params)
                 cx.cache[p] = c[i]
             else
                 # Add the gradients
-                cx.cache[p] .+= c[i]
+                if c[i] !== nothing
+                    cx.cache[p] .+= c[i]
+                end
             end
         end
     end

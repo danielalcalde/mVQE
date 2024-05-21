@@ -12,6 +12,7 @@ using OptimKit
 using Zygote
 import Flux
 
+using TensorOperations
 using ITensors
 using PastaQ
 
