@@ -50,4 +50,12 @@ struct PermuteDims
     permutation::Tuple
 end
 
-(f::PermuteDims)(M) = permutedims(M, f.permutation)
+function (f::PermuteDims)(M)
+    permutation = f.permutation[1:ndims(M)]
+    permutedims(M, permutation)
+end
+struct ReshapeDims
+    shape::Tuple
+end
+
+(f::ReshapeDims)(M) = reshape(M, f.shape)

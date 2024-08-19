@@ -3,9 +3,12 @@ module GirvinProtocol
 using ITensors
 using Flux
 using Zygote
+using TensorOperations
+using Random, RandomMatrices
 
 using ..Circuits: AbstractVariationalCircuit, AbstractVariationalMeasurementCircuit, generate_circuit, VariationalMeasurementMCFeedback
 using ..Misc: get_ancilla_indices
+using ..FluxExtensions: SpinTokenizer
 using mVQE: Circuits, Layers
 
 struct GirvinCircuit <: AbstractVariationalCircuit
@@ -167,6 +170,128 @@ function (t::GirvinCorrectionNetwork)(M::Matrix{T}) where T <: Real
         return y_tar
     end
 end
+
+###
+
+struct GirvinCorrectionNetworkLearnable
+    A::Array{T, 3} where T
+    C::Matrix{T} where T
+    trainable::Vector{Bool}
+end
+Flux.@functor GirvinCorrectionNetworkLearnable
+function Flux.trainable(self::GirvinCorrectionNetworkLearnable)
+    t = []
+    if self.trainable[1]
+        push!(t, self.A)
+    end
+    if self.trainable[2]
+        push!(t, self.C)
+    end
+    return Tuple(t)
+end
+
+
+function GirvinCorrectionNetworkLearnable()
+    A = zeros(4,4,4)
+    A[1, 1, 4] = 1
+    A[1, 2, 3] = 1
+    A[1, 3, 2] = 1
+    A[1, 4, 1] = 1
+    A[2, 4, 3] = 1
+    A[2, 2, 1] = 1
+    A[2, 3, 4] = 1
+    A[2, 1, 2] = 1
+    A[3, 4, 2] = 1
+    A[3, 2, 4] = 1
+    A[3, 3, 1] = 1
+    A[3, 1, 3] = 1
+    A[4, 4, 4] = 1
+    A[4, 2, 2] = 1
+    A[4, 3, 3] = 1
+    A[4, 1, 1] = 1
+
+    C = zeros(4, 4)
+    C[:, 1] = [0, 0, 0, 0]
+    C[:, 2] = [0, 0, 0, pi]
+    C[:, 3] = [pi/2, pi/2, pi/2, pi]
+    C[:, 4] = [pi/2, pi/2, pi/2, 0]
+    return GirvinCorrectionNetworkLearnable(A, C, [false, false])
+end
+
+function GirvinCorrectionNetworkLearnable(dv::Integer, dh::Integer; d_out=dh)
+    d = Haar(1)
+    
+    A = Array{Float64, 3}(undef, dv, dh, dh)
+    for i in 1:dv
+        A[i, :, :] = rand(d, dh)
+    end
+    C = randn(d_out, dh)
+    return GirvinCorrectionNetworkLearnable(A, C, [true, true])
+end
+
+function (self::GirvinCorrectionNetworkLearnable)(M::Vector{T}) where T <: Real
+    M = M[2:end-1]
+
+    @assert mod(length(M), 2) == 0 "M must have even length (got $(length(M)))"
+    M = SpinTokenizer(2)(M)
+    angles = nothing
+    state = Zygote.@ignore begin
+        state = zeros(size(self.C, 1))
+        state[1] = 1.
+        state
+    end
+
+    for i in 1:size(M, 1)
+        if angles === nothing
+            angles = self.C * state
+        else
+            angles = hcat(angles, self.C * state)
+        end
+        angles = hcat(angles, self.C * state)
+
+        v = M[i, :]
+        @tensor state[a] := v[j] * state[k] * self.A[j, k, a]
+    end
+        
+    angles = hcat(angles, self.C * state)
+    angles = hcat(angles, self.C * state)
+    
+    return angles'
+end
+
+function (self::GirvinCorrectionNetworkLearnable)(M::Matrix{T}) where T <: Real
+    bdim = size(M, 2)
+    L = size(M, 1)
+    M = M[2:end-1, :]
+    M = SpinTokenizer(2)(M)
+    
+    angles = nothing
+    state = Zygote.@ignore begin
+        state = zeros(size(self.C, 1), bdim)
+        state[1, :] .= 1.
+        state
+    end
+    @tensor As[h1, h2, l, b] := self.A[d, h1, h2] * M[l, d, b] 
+    
+    for i in 1:size(M, 1)
+        if angles === nothing
+            angles = self.C * state
+        else
+            angles = hcat(angles, state)
+        end
+        angles = hcat(angles, state)
+        A = As[:, :, i, :]
+        state = NNlib.batched_mul(A, reshape(state, size(state, 1), 1, size(state, 2)))[:, 1, :]
+    end
+        
+    angles = hcat(angles, state)
+    angles = hcat(angles, state)
+    
+    angles = self.C * angles
+    angles = reshape(angles, :, bdim, L)
+    return permutedims(angles, (3, 1, 2))
+end
+
 
 function GirvinMCFeedback(N_state::Int, ancilla_indices::Vector{<:Integer})
     vmodels = [GirvinCircuitIdeal(N_state), GirvinCorrCircuit(Int(N_state/2))]

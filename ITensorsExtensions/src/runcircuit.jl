@@ -16,7 +16,6 @@ function runcircuit(
    verbose=false
    )
    @assert noise === nothing "Noise is not implemented yet."
-
    M = full_representation ? PastaQ.convert_to_full_representation(M) : M
    circuit_tensors = PastaQ.buildcircuit(M, circuit; noise, eltype, device)
    if gate_grad

@@ -57,6 +57,10 @@ get_sites(model::AbstractVariationalCircuitRy) = model.sites
 
 function (model::AbstractVariationalCircuitRy{T})(ρ::States; params=nothing, eltype=nothing, kwargs...) where T <: Number
     params, N, depth = get_parameters(model; params=params)
+    @assert size(params, 1) == N "Number of qubits must match number of parameters"
+    @assert size(params, 2) == depth "Number of layers must match number of parameters"
+    #@assert length(ρ) == N "Number of qubits must match number of parameters"
+    @assert length(model.sites) == N "Number of qubits must match number of sites"
     for d in 1:depth-1
         
         circ = Rylayer(params[:, d]; sites=model.sites)

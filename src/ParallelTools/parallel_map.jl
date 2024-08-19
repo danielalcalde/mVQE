@@ -93,16 +93,17 @@ function update_cache!(cx, Δx, x)
     return cx
 end
 
+
+import Base.+
++(::Nothing, ::Nothing) = nothing # Fix for summing nothing, TODO: Remove this
+
 function update_context!(cx, contexts; params)
     for c in contexts
         for (i, p) in enumerate(params)
             if !(p in keys(cx.cache)) || cx.cache[p] === nothing
                 cx.cache[p] = c[i]
-            else
-                # Add the gradients
-                if c[i] !== nothing
-                    cx.cache[p] .+= c[i]
-                end
+            elseif c[i] != nothing && cx.cache[p] != nothing # Add the gradients
+                cx.cache[p] .+= c[i]
             end
         end
     end
@@ -209,6 +210,7 @@ function ∇pmap_diff_scalar(cx, f::F, args::Vararg{Any, N}) where {F, N}
         Δf = reduce(accum, Δf_and_args[1]; init=nothing)
         Δargs = map(_restore, Δf_and_args[2:end], arg_ax)
         
+        # TODO: Fix this to update the context cache properly
         for s in keys(Δf)
             if isdefined(f, s)
                 update_cache!(cx, getfield(Δf, s), getfield(f, s))

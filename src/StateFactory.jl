@@ -205,6 +205,25 @@ function AKLT_half(spin1_vec, spin2_vec, hilbert; basis="girvin")
     return mps
 end
 
+function orthogonalize(ψ2, ψ1)
+    r = -inner(ψ1, ψ2)
+    ψ2n = +(ψ2, r * ψ1; cutoff=1e-10)
+    ψ2n = ψ2n/norm(ψ2n)
+    return ψ2n
+end
+
+function orthogonalize_basis(ψs::Vector{MPS})
+    ψs = copy(ψs)
+    for i in 1:length(ψs)
+        for j in 1:i-1
+            @show i, j
+            r = inner(ψs[i], ψs[j])
+            ψs[i] = orthogonalize(ψs[i], ψs[j])
+        end
+    end
+    return ψs
+end
+
 """
 Constructs the 4 AKLT states.
 """

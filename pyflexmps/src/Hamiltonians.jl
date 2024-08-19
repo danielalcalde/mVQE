@@ -28,13 +28,13 @@ end
 
 function translate_spinone_to_spinhalf_symb(i=0; spin_trans=Dict(), base="girvin")
     if base=="girvin"
-        spin_trans[pfs.KetSpinOne("1", i)] = pfs.KetSpinHalf("-1/2", i)*pfs.KetSpinHalf("1/2", i+1)
-        spin_trans[pfs.KetSpinOne("0", i)] = pfs.KetSpinHalf("1/2", i)*pfs.KetSpinHalf("1/2", i+1)
-        spin_trans[pfs.KetSpinOne("-1", i)] = pfs.KetSpinHalf("1/2", i)*pfs.KetSpinHalf("-1/2", i+1)
+        spin_trans[Sym(pfs.KetSpinOne("1", i))] = Sym(pfs.KetSpinHalf("-1/2", i)*pfs.KetSpinHalf("1/2", i+1))
+        spin_trans[Sym(pfs.KetSpinOne("0", i))] = Sym(pfs.KetSpinHalf("1/2", i)*pfs.KetSpinHalf("1/2", i+1))
+        spin_trans[Sym(pfs.KetSpinOne("-1", i))] = Sym(pfs.KetSpinHalf("1/2", i)*pfs.KetSpinHalf("-1/2", i+1))
     elseif base == "clebsch"
-        spin_trans[pfs.KetSpinOne("1", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=1, n1=i, n2=i+1)
-        spin_trans[pfs.KetSpinOne("0", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=0, n1=i, n2=i+1)
-        spin_trans[pfs.KetSpinOne("-1", i)] = pfs.KetSpinHalf.from_spin1(stot=1, sz=-1, n1=i, n2=i+1)
+        spin_trans[Sym(pfs.KetSpinOne("1", i))] = Sym(pfs.KetSpinHalf.from_spin1(stot=1, sz=1, n1=i, n2=i+1))
+        spin_trans[Sym(pfs.KetSpinOne("0", i))] = Sym(pfs.KetSpinHalf.from_spin1(stot=1, sz=0, n1=i, n2=i+1))
+        spin_trans[Sym(pfs.KetSpinOne("-1", i))] = Sym(pfs.KetSpinHalf.from_spin1(stot=1, sz=-1, n1=i, n2=i+1))
     end
     return spin_trans
 end
@@ -88,41 +88,41 @@ function get_projector_from_spinone_to_spinhalf(i)
     for (v, p) in translate_spinone_to_spinhalf_symb(i)
         c += sympy.adjoint(p)*v
     end
-    return c
+    return Sym(c)
 end
 
 function hamiltonian_haldane_half_symb(θ=atan(1/3); kwargs...)
     Sx1 = pfs.Spin1("x", 0)
     Sz1 = pfs.Spin1("z", 0)
-    Sym = [0  1 0;
+    Sym_ = [0  1 0;
            -1 0 1;
            0 -1 0]
-    Sy1 = -im*sympy.simplify(pfs.Spin1.from_matrix(Sym, 0)/sympy.sqrt(2))
-
+    
+    Sy1 = -im * sympy.simplify(Sym(pfs.Spin1.from_matrix(Sym_, 0))/sympy.sqrt(2))
     Sx2 = pfs.Spin1("x", 2)
     Sz2 = pfs.Spin1("z", 2)
-    Sy2 = -im*sympy.simplify(pfs.Spin1.from_matrix(Sym, 2)/sympy.sqrt(2))
+    Sy2 = -im * sympy.simplify(Sym(pfs.Spin1.from_matrix(Sym_, 2))/sympy.sqrt(2))
 
     S1 = [Sx1, Sy1, Sz1]
     S2 = [Sx2, Sy2, Sz2]
     
-    # Project to  SpinHalg
+    # Project to  SpinHalf
     c0 = get_projector_from_spinone_to_spinhalf(0; kwargs...)
     c2 = get_projector_from_spinone_to_spinhalf(2; kwargs...)
 
-    conv1 = S -> pfs.quantum_states.convert_ketbra_to_operator(pfs.apply(sympy.adjoint(c0)*S*c0))
+    conv1 = S -> Sym(pfs.quantum_states.convert_ketbra_to_operator(pfs.apply((sympy.adjoint(c0)*Sym(S)*Sym(c0)).o)))
     S1c = conv1.(S1)
 
-    conv2 = S -> pfs.quantum_states.convert_ketbra_to_operator(pfs.apply(sympy.adjoint(c2)*S*c2))
+    conv2 = S -> Sym(pfs.quantum_states.convert_ketbra_to_operator(pfs.apply((sympy.adjoint(c2)*Sym(S)*Sym(c2)).o)))
     S2c = conv2.(S2)
 
     SS = sum(S1c .* S2c)
     SS2 = SS * SS
-    id = pfs.sigmaid(0) * pfs.sigmaid(1) * pfs.sigmaid(2) * pfs.sigmaid(3)
+    id = Sym(pfs.sigmaid(0) * pfs.sigmaid(1) * pfs.sigmaid(2) * pfs.sigmaid(3))
     
     J = 0.5/cos(atan(1/3))
-    J1, J2 = J * cos(θ), J * sin(θ)
-    #println(" _J1 = $J1, J2=$J2")
+    J1, J2 = J .* (cos(θ), sin(θ))
+    
     #H_term = 1/sympy.Number(2) * SS
     #H_term += 1/sympy.Number(6) * SS2
 
@@ -130,7 +130,7 @@ function hamiltonian_haldane_half_symb(θ=atan(1/3); kwargs...)
     H_term += J2 * SS2
     H_term += 1/sympy.Number(3) * id
 
-    H_term = pfs.apply(H_term)
+    H_term = pfs.apply(H_term.o)
     return H_term
 end
 
