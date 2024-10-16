@@ -43,7 +43,6 @@ end
 
 function dict_to_string(a::Dict)
     result = ""
-    
     for (i, (key, value)) in enumerate(a)
         if i != 1
             result *= "_"

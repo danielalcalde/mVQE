@@ -15,7 +15,7 @@ using ITensors: AbstractMPS
 
 using ..ITensorsExtension: VectorAbstractMPS, States
 using ..ITensorsMeasurement: projective_measurement, projective_measurement_sample
-using ..Layers: Rxlayer, Rylayer, Rzlayer, CXlayer, CRxlayer, BrickLayer, OneGateLayer, Ulayer, CUlayer, CUlayer_broken, CX_Idlayer
+using ..Layers: Rxlayer, Rylayer, Rzlayer, CXlayer, CRxlayer, BrickLayer, OneGateLayer, Ulayer, CUlayer, CUlayer_broken, CX_Idlayer, FullTwoBody
 using ..Layers: ProjectiveMeasurementLayer
 
 # Types

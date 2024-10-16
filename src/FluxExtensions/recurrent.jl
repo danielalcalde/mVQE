@@ -206,6 +206,88 @@ function Base.show(io::IO, l::RNNCNNLightBlock)
     print(io, "RNNCNNLightBlock(", size(l.dense_in.weight, 1), " => ", size(l.dense_out.weight, 2), ", dconv=", dconv ,")")
 end
 
+
+### RNNLLamaBlock
+struct RNNSwiGluBlock
+    swiglu
+    rnn
+    rnn_reverse
+    dense_out
+    rms_norm
+end
+Flux.@functor RNNSwiGluBlock
+
+function (self::RNNSwiGluBlock)(input; kwargs...)
+    
+    # Rnn Block
+    x = input #shape (d_in, batch, L)
+    if self.rms_norm !== nothing
+        x = self.rms_norm(x)
+    end
+
+    Flux.reset!(self.rnn)
+    x_1 = self.rnn(x) #shape (d_out, batch, L)
+
+    if self.rnn_reverse !== nothing
+        Flux.reset!(self.rnn_reverse)
+        x_2 = self.rnn_reverse(x[:, :, end:-1:1])  
+        x_2 = x_2[:, :, end:-1:1]
+        x = vcat(x_1, x_2) # shape (2*d_out, batch, L)
+        x = self.dense_out(x) #shape (d_out, batch, L)
+    end
+    input += x
+
+    # Swiglu Block
+    x = input #shape (d_in, batch, L)
+    if self.swiglu !== nothing
+        if self.rms_norm !== nothing
+            x = self.rms_norm(x)
+        end
+        input += self.swiglu(x)
+    end
+
+    return input
+end
+
+function RNNSwiGluBlock(s::Pair{<:Integer,<:Integer}; swiglu=true, hidden_dim=round(Int, 2.5 * s.second), RNN_type=Flux.RNN, bidirectional=false, double_dense=true, rms_norm=true)
+    @assert s.first == s.second
+    rms_norm_ = nothing
+    if rms_norm
+        rms_norm_ = RMSNorm(s.second)
+    end
+
+    # RNN
+    rnn = RNN_type(s.first => s.second)
+    rnn2 = nothing
+    dense_out = nothing
+    if bidirectional
+        rnn2 = RNN_type(s.first => s.second)
+        dense_out = Dense(2 * s.second => s.second)
+    end
+
+    # SwiGlu
+    if !swiglu
+        swiglu = nothing
+    else
+        swiglu = SwiGlu(s.second => s.second, hidden_dim)
+    end
+
+    return RNNSwiGluBlock(
+            swiglu,
+            rnn,
+            rnn2,
+            dense_out,
+            rms_norm_
+            )
+end
+
+function Base.show(io::IO, l::RNNSwiGluBlock)
+    hidden_dim = size(l.swiglu.model_in.weight, 1)
+    print(io, "RNNSwiGluBlock(", size(l.swiglu.model_in.weight, 2), " => ", size(l.swiglu.model_out.weight, 1), ", hidden_dim=", hidden_dim ,")")
+end
+
+
+
 struct RNNOrder
     conv
     global ConvRNNOrder

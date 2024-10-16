@@ -46,6 +46,10 @@ function mutual_info(ψinter, A, B, rest=nothing; mem=Dict())
     return SA + SB - SAB
 end
 
+function tripartite_mutual_info(ψinter, A, B, C, rest=nothing; mem=Dict())
+    return mutual_info(ψinter, A, B, rest; mem) + mutual_info(ψinter, A, C, rest; mem) - mutual_info(ψinter, A, vcat(B, C), rest; mem)
+end
+
 function mutual_info_matrix(ψ, indices=collect(1:length(ψ)); mem=Dict(), verbose=false)
     l1 = length(indices)
     M = zeros(l1, l1)

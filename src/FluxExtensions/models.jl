@@ -56,9 +56,9 @@ end
 Flux.@functor SwiGlu
 
 function SwiGlu(ds::Pair{<:Integer,<:Integer}, hidden_dim::Integer;
-    model_in=Dense(ds[1] => hidden_dim),
-    model_glue=Dense(ds[1] => hidden_dim),
-    model_out=Dense(hidden_dim => ds[2])
+    model_in=Dense(ds[1] => hidden_dim, bias=false),
+    model_glue=Dense(ds[1] => hidden_dim, bias=false),
+    model_out=Dense(hidden_dim => ds[2], bias=false)
     )
 
     return SwiGlu(model_in, model_glue, model_out)
@@ -68,7 +68,7 @@ function (self::SwiGlu)(input; kwargs...)
     swi = swish(self.model_in(input))
     x_V = self.model_glue(input)
     x = x_V .* swi
-    x = self.model_out(x)
+    return self.model_out(x)
 end
 
 

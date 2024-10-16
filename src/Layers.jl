@@ -6,6 +6,33 @@ function OneGateLayer(θ; offset=0, gate="Ry", sites=1:length(θ))
     return [(gate, sites[i + offset], (θ = θi,)) for (i, θi) in enumerate(θ)]
 end
 
+function OneGateLayer2(θ; offset=0, gate="Ry", sites=1:length(θ))
+    @assert length(θ) + offset <= length(sites) "Number of parameters must match number of qubits in the layer (param_size=$(length(θ)), qubits=$(length(sites)))"
+    a = [(gate, sites[i + offset], (θ = θi,)) for (i, θi) in enumerate(θ)]
+    return a
+end
+Zygote.@adjoint function OneGateLayer2(θ; offset=0, gate="Ry", sites=1:length(θ))
+    @assert length(θ) + offset <= length(sites) "Number of parameters must match number of qubits in the layer (param_size=$(length(θ)), qubits=$(length(sites)))"
+    a = [(gate, sites[i + offset], (θ = θi,)) for (i, θi) in enumerate(θ)]
+    function fg(ā)
+        return ([ai[3].θ for ai in ā],)
+    end
+    return a, fg
+end
+
+function print_derivate(x; func=x->x, id="")
+    println("Fw_$id: ", func(x)) 
+    return x
+end
+@Zygote.adjoint function print_derivate(x; func=x->x, id="")
+    println("Fw_$id: ", func(x))
+    function fg(a)
+        println("Bw_$id: ", func(a))
+        return (a,)
+    end
+    return x, fg
+end
+
 Rzlayer(θ; kwargs...) = OneGateLayer(θ; kwargs..., gate="Rz")
 Rylayer(θ; kwargs...) = OneGateLayer(θ; kwargs..., gate="Ry")
 Rxlayer(θ; kwargs...) = OneGateLayer(θ; kwargs..., gate="Rx")
@@ -71,6 +98,16 @@ end
 end
 
 
+# Full 2Body layer
+function FullTwoBody(N, Π, θs; offset=0, sites=1:N)
+    @assert N <= size(θs, 1)*2 "Number of qubits must be less or equal than the number of parameters"
+    start = isodd(Π) ? 1 : 2
+    start += offset
+    return [("full_U_lie", (sites[j], sites[j + 1]), (θ = θs[i, :],)) for (i, j) in enumerate(start:2:(N - 1))]
+end
+
+
+# Bell gate
 BellGate(i0, i1) = [("CX", (i1, i0)), ("H", i1)]
 function BellGateLayer(N; sites=1:N)
     @assert N % 2 == 0 "Number of qubits must be even"
@@ -80,5 +117,7 @@ end
 
 # Projective measurement Layer
 ProjectiveMeasurementLayer(indices, reset_state) = [("reset", i, (state=reset_state,)) for i in indices]
+
+
 
 end

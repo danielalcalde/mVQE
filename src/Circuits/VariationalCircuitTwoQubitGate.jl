@@ -91,3 +91,30 @@ function generate_circuit!(circuit, v::VariationalCircuitTwoQubitGatePeriodic; p
     end
     return circuit
 end
+
+
+# Full 2bodygate
+
+# Variational circuit with a parametrized two qubit gate
+mutable struct VariationalCircuitFullTwoQubitGate <: AbstractVariationalCircuitBlock
+    params::Array{Float64, 3}
+    odd_first::Bool
+    sites::Vector{<:Integer}
+    VariationalCircuitFullTwoQubitGate(params::Array{Float64, 3}; odd_first=false,  sites=collect(1:size(params, 1)*2)) = new(params, odd_first, sites)
+    function VariationalCircuitFullTwoQubitGate(N::Int, depth::Int; sites=collect(1:N), odd_first=false)
+        @assert mod(length(sites), 2) == 0
+        params = 2π .* rand(N÷2, 15, depth) .- π
+        return new(params, odd_first, sites)
+    end
+    VariationalCircuitFullTwoQubitGate(; odd_first=false, sites=1:1) = new(Array{Float64, 3}(undef, 0, 32, 0), odd_first, sites) # Empty circuit to be used as a placeholder
+end
+Flux.@functor VariationalCircuitFullTwoQubitGate
+get_N(model::VariationalCircuitFullTwoQubitGate) = length(model.sites)
+
+function generate_circuit!(circuit, v::VariationalCircuitFullTwoQubitGate; params=nothing, N::Integer, depth::Integer)
+    @assert size(params, 1) == length(v.sites) ÷ 2
+    for d in 1:depth
+        circuit = vcat(circuit, FullTwoBody(N, d + v.odd_first, params[:, :, d]; sites=v.sites))
+    end
+    return circuit
+end
