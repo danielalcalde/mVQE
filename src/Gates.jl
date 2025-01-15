@@ -11,14 +11,14 @@ end
 
 PastaQ.is_single_qubit_noise(::GateName"reset") = false
 
-function ITensors.op(::OpName"U", ::SiteType"Qubit"; θ::Vector{T}) where T <: Number 
+function ITensors.op(::OpName"U", ::SiteType"Qubit"; θ::AbstractVector{T}) where T <: Number 
    return [
    exp(1im*(-θ[1]-θ[3])) * cos(θ[2]) -exp(1im*(-θ[1]+θ[3])) * sin(θ[2])
    exp(1im*(θ[1]-θ[3])) * sin(θ[2])  exp(1im*(θ[1]+θ[3])) * cos(θ[2])
    ]
 end
 
-function ITensors.op(::OpName"CU", ::SiteType"Qubit"; θ::Vector{T}) where T <: Number
+function ITensors.op(::OpName"CU", ::SiteType"Qubit"; θ::AbstractVector{T}) where T <: Number
    return [
      1 0 0 0
      0 1 0 0

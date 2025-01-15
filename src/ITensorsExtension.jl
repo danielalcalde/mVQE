@@ -77,6 +77,27 @@ function add_ancillas(ψ::MPS, hilbert, sites; state=1)
     return MPS(ψ)
 end
 
+function add_ancillas(mpo::MPO, hilbert, sites)
+    @assert length(hilbert) == length(sites)
+    mpo = mpo[:]
+    
+    for (index, site) in zip(hilbert, sites)
+        new_mpo = ITensor(index)
+        new_mpo = δ(index, index')
+
+        if !(site == 1 || site > length(mpo))
+            link_original = commonind(mpo[site-1], mpo[site])
+            link_new = Index(dim(link_original); tags="Link,n=e$site")
+            mpo[site] = mpo[site] * δ(link_original, link_new)
+
+            new_mpo = δ(link_original, link_new) * new_mpo
+        end
+        
+        insert!(mpo, site, new_mpo)
+    end
+    return MPO(mpo)
+end
+
 # Custom @adoints for Zygote
 function Base.convert(::Type{T}, x::Zygote.Tangent) where {T <: ITensors.AbstractMPS}
     return T(x.data, x.llim, x.rlim)

@@ -270,6 +270,23 @@ function W_state(hilbert)
     return ψ
 end
 
+function GHZ(hilbert)
+    N = length(hilbert)
+    ψ = (productstate(hilbert, fill(0, N)) + productstate(hilbert, fill(1, N))) / sqrt(2)
+    return ψ
+end
+
+function GHZ_hamiltonian(hilbert, h=2.)
+    N = length(hilbert)
+    Hx = -MPO(hilbert, "X")
+    Hid = MPO(hilbert, "Id")
+    Hop = OpSum()
+    for i in 1:N-1
+        Hop .+= (-1,"Z", i, "Z", i+1)
+    end
+    return (N-1+h*N) * Hid + h * N * Hx + MPO(Hop, hilbert) 
+end
+
 
 # end module
 end

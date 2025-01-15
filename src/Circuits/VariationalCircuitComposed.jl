@@ -52,6 +52,24 @@ function generate_circuit!(circuit, model::VariationalOneQubit; params=nothing, 
     return vcat(circuit, OneGateLayer(params; sites=model.sites, gate=model.gate_type))
 end
 
+struct VariationalOneQubitM{T <: Number} <: AbstractVariationalLayer
+    sites::Vector{<:Integer}
+    params::Matrix{T}
+    gate_type::String
+end
+Flux.@functor VariationalOneQubitM
+
+function VariationalOneQubitM(N::Integer; gate_type="U", sites=1:N, nr_params=1)
+    @assert N == length(sites) "Number of sites must match number of qubits"
+    params = 2π .* rand(N, nr_params) .- π
+    return VariationalOneQubitM(collect(sites), params, gate_type)
+end
+
+function generate_circuit!(circuit, model::VariationalOneQubitM; params=nothing, N::Integer, depth::Integer)
+    params = select_params(params, model.params)
+    return vcat(circuit, OneGateLayer(params; sites=model.sites, gate=model.gate_type))
+end
+
 struct VariationalTwoQubit{T <: Number} <: AbstractVariationalLayer
     sites::Vector{<:Integer}
     params::Vector{T}

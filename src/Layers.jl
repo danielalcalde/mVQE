@@ -1,23 +1,15 @@
 module Layers
 using Zygote
 
-function OneGateLayer(θ; offset=0, gate="Ry", sites=1:length(θ))
+function OneGateLayer(θ::Vector; offset=0, gate="Ry", sites=1:length(θ))
+    
     @assert length(θ) + offset <= length(sites) "Number of parameters must match number of qubits in the layer (param_size=$(length(θ)), qubits=$(length(sites)))"
     return [(gate, sites[i + offset], (θ = θi,)) for (i, θi) in enumerate(θ)]
 end
 
-function OneGateLayer2(θ; offset=0, gate="Ry", sites=1:length(θ))
-    @assert length(θ) + offset <= length(sites) "Number of parameters must match number of qubits in the layer (param_size=$(length(θ)), qubits=$(length(sites)))"
-    a = [(gate, sites[i + offset], (θ = θi,)) for (i, θi) in enumerate(θ)]
-    return a
-end
-Zygote.@adjoint function OneGateLayer2(θ; offset=0, gate="Ry", sites=1:length(θ))
-    @assert length(θ) + offset <= length(sites) "Number of parameters must match number of qubits in the layer (param_size=$(length(θ)), qubits=$(length(sites)))"
-    a = [(gate, sites[i + offset], (θ = θi,)) for (i, θi) in enumerate(θ)]
-    function fg(ā)
-        return ([ai[3].θ for ai in ā],)
-    end
-    return a, fg
+function OneGateLayer(θ::Matrix; offset=0, gate="Ry", sites=1:length(θ))
+    @assert size(θ, 1) + offset <= length(sites) "Number of parameters must match number of qubits in the layer (param_size=$(size(θ, 1)), qubits=$(length(sites)))"
+    return [(gate, sites[i + offset], (θ = θi,)) for (i, θi) in enumerate(eachslice(θ, dims=1))]
 end
 
 function print_derivate(x; func=x->x, id="")
