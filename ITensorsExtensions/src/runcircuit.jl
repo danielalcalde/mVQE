@@ -1,3 +1,6 @@
+"""
+Efficient application of one qubit unitary gates to a state psi. The backpropgation is much faster than the one provided by ITensors.jl.
+"""
 function runcircuit(
    M::MPS,
    circuit::Union{Tuple,AbstractVector};
