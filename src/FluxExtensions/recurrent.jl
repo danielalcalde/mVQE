@@ -218,11 +218,14 @@ end
 Flux.@functor RNNSwiGluBlock
 
 function (self::RNNSwiGluBlock)(input; kwargs...)
-    
+    rms_norm = self.rms_norm
+    if !(rms_norm isa Vector)
+        rms_norm = [rms_norm, rms_norm]
+    end
     # Rnn Block
     x = input #shape (d_in, batch, L)
-    if self.rms_norm !== nothing
-        x = self.rms_norm(x)
+    if rms_norm[1] !== nothing
+        x = rms_norm[1](x)
     end
 
     Flux.reset!(self.rnn)
@@ -234,14 +237,16 @@ function (self::RNNSwiGluBlock)(input; kwargs...)
         x_2 = x_2[:, :, end:-1:1]
         x = vcat(x_1, x_2) # shape (2*d_out, batch, L)
         x = self.dense_out(x) #shape (d_out, batch, L)
+    else
+        x = x_1
     end
     input += x
 
     # Swiglu Block
     x = input #shape (d_in, batch, L)
     if self.swiglu !== nothing
-        if self.rms_norm !== nothing
-            x = self.rms_norm(x)
+        if rms_norm[2] !== nothing
+            x = rms_norm[2](x)
         end
         input += self.swiglu(x)
     end
@@ -251,9 +256,9 @@ end
 
 function RNNSwiGluBlock(s::Pair{<:Integer,<:Integer}; swiglu=true, hidden_dim=round(Int, 2.5 * s.second), RNN_type=Flux.RNN, bidirectional=false, double_dense=true, rms_norm=true)
     @assert s.first == s.second
-    rms_norm_ = nothing
+    rms_norm_ = [nothing, nothing]
     if rms_norm
-        rms_norm_ = RMSNorm(s.second)
+        rms_norm_ = [RMSNorm(s.second), RMSNorm(s.second)]
     end
 
     # RNN
