@@ -30,9 +30,9 @@
 - **Girvin protocol**: An implementation of the measurement-based protocol from [Smith *et al.*, PRX Quantum 4, 020315](https://journals.aps.org/prxquantum/abstract/10.1103/PRXQuantum.4.020315).
 
 ## Exmaples
-'''
+```
 vmodels = [
-        VariationalCircuitRy(N, depth),
+        mVQE.Circuits.VariationalCircuitRy(N, depth),
         mVQE.Circuits.VariationalOneQubitM(
             N_state; gate_type="U", sites=state_indices, nr_params=3
         )
@@ -42,8 +42,8 @@ feedback_model = mVQE.FluxExtensions.TabularModel
 model = VariationalMeasurementMCFeedback(vmodels, [feedback_model], ancilla_indices)
 
 ψM = model(ψ)
-'''
-The model can the be optimized in variarity of ways. To see full examples you can check the the [zenodo](https://zenodo.org/records/) todo repository
+```
+The resulting model can be optimized in a variety of ways. To see full examples you can check the [zenodo]([https://zenodo.org/records/](https://doi.org/10.5281/zenodo.14654836)) repository.
 
 ## API Breakdown
 
