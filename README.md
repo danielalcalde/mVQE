@@ -29,7 +29,7 @@
 - **Neural network feedback**: An optional Flux-based approach for feedback and adaptive parameter updates in the mVQE algorithm.
 - **Girvin protocol**: An implementation of the measurement-based protocol from [Smith *et al.*, PRX Quantum 4, 020315](https://journals.aps.org/prxquantum/abstract/10.1103/PRXQuantum.4.020315).
 
-## Exmaples
+## Examples
 ```
 vmodels = [
         mVQE.Circuits.VariationalCircuitRy(N, depth),
